@@ -2,8 +2,15 @@
   "name": "Miremont",
   "baseBranch": "main",
   "worktreePrefix": "miremont",
-  "dbPushCommand": "",
-  "envCheck": [],
-  "servers": [],
-  "credentials": ""
+  "dbPushCommand": "npm run db:push",
+  "envCheck": ["DATABASE_URL"],
+  "servers": [
+    {
+      "name": "App",
+      "cwd": ".",
+      "command": "PORT=$PORT npm run dev",
+      "defaultPort": 3000
+    }
+  ],
+  "credentials": "admin@thepropertycatalogue.com / admin123, emma@luxuryrealty.com / agent123, sophia@example.com / buyer123"
 }
