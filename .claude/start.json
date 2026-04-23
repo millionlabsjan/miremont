@@ -1,0 +1,9 @@
+{
+  "name": "Miremont",
+  "baseBranch": "main",
+  "worktreePrefix": "miremont",
+  "dbPushCommand": "",
+  "envCheck": [],
+  "servers": [],
+  "credentials": ""
+}
