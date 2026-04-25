@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { db, notify } from "../db/index";
 import { users, sessions } from "../db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and, gt } from "drizzle-orm";
 import { z } from "zod";
 import argon2 from "argon2";
 import { nanoid } from "nanoid";
 import crypto from "crypto";
+import { sendPasswordResetEmail } from "../email";
 
 // Sign a session ID the same way express-session does
 function signSessionId(sessionId: string, secret: string): string {
@@ -145,6 +146,95 @@ authRouter.post("/logout", (req, res) => {
     res.clearCookie("connect.sid");
     res.json({ message: "Logged out" });
   });
+});
+
+// Forgot password — send reset email
+authRouter.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = z.object({ email: z.string().email() }).parse(req.body);
+
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+
+    // Always return success to avoid email enumeration
+    if (!user) {
+      return res.json({ message: "If that email exists, a reset link has been sent." });
+    }
+
+    const token = nanoid(48);
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+
+    await db
+      .update(users)
+      .set({
+        passwordResetToken: tokenHash,
+        passwordResetExpiresAt: expiresAt,
+      })
+      .where(eq(users.id, user.id));
+
+    try {
+      await sendPasswordResetEmail(email, token);
+    } catch (emailErr) {
+      console.warn("Failed to send reset email:", emailErr);
+    }
+
+    res.json({ message: "If that email exists, a reset link has been sent." });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ message: err.errors[0].message });
+    }
+    console.error("Forgot password error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// Reset password — validate token and set new password
+authRouter.post("/reset-password", async (req, res) => {
+  try {
+    const { token, password } = z
+      .object({ token: z.string(), password: z.string().min(8) })
+      .parse(req.body);
+
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.passwordResetToken, tokenHash),
+          gt(users.passwordResetExpiresAt, new Date())
+        )
+      )
+      .limit(1);
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid or expired reset link" });
+    }
+
+    const passwordHash = await argon2.hash(password);
+
+    await db
+      .update(users)
+      .set({
+        passwordHash,
+        passwordResetToken: null,
+        passwordResetExpiresAt: null,
+      })
+      .where(eq(users.id, user.id));
+
+    res.json({ message: "Password has been reset successfully" });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ message: err.errors[0].message });
+    }
+    console.error("Reset password error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
 });
 
 authRouter.get("/me", async (req, res) => {

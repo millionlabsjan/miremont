@@ -69,6 +69,8 @@ export const users = pgTable(
       systemErrors?: boolean;
     }>(),
     stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
+    passwordResetToken: varchar("password_reset_token", { length: 255 }),
+    passwordResetExpiresAt: timestamp("password_reset_expires_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

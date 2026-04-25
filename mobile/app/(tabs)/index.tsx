@@ -146,9 +146,9 @@ export default function HomeScreen() {
       {/* View All button */}
       <TouchableOpacity
         onPress={() => router.push("/(tabs)/explore")}
-        style={{ marginHorizontal: 20, height: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 10, justifyContent: "center", alignItems: "center", backgroundColor: colors.white, marginBottom: 32 }}
+        style={{ marginHorizontal: 20, height: 48, borderRadius: 10, justifyContent: "center", alignItems: "center", backgroundColor: colors.dark, marginBottom: 32 }}
       >
-        <Text style={{ fontFamily: "Inter_500Medium", fontSize: 14, color: colors.dark }}>View All</Text>
+        <Text style={{ fontFamily: "Inter_500Medium", fontSize: 14, color: colors.offwhite }}>View All</Text>
       </TouchableOpacity>
 
       {/* Articles section */}
