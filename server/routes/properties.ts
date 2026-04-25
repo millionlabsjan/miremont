@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "../db/index";
+import { db, notify } from "../db/index";
 import {
   properties,
   propertyCategories,
@@ -249,6 +249,10 @@ propertiesRouter.post("/", requireRole("agent"), async (req, res) => {
         }))
       );
     }
+
+    // Notify all admins about new property
+    const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, "admin"));
+    await Promise.all(admins.map((a) => notify(a.id, "new_property", `New property listed`, `${property.title} in ${property.city}, ${property.country}`)));
 
     res.status(201).json(property);
   } catch (err) {

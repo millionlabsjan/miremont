@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db } from "../db/index";
 import { users, userSubscriptions, subscriptionPlans, properties } from "../db/schema";
+import { notify } from "../db/index";
 import { eq, ilike, and, or, sql, desc, count, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { z } from "zod";
@@ -84,6 +85,16 @@ usersRouter.put("/password", requireAuth, async (req, res) => {
       return res.status(400).json({ message: err.errors[0].message });
     res.status(500).json({ message: "Internal server error" });
   }
+});
+
+// Admin: platform stats
+usersRouter.get("/stats", requireRole("admin"), async (req, res) => {
+  const [[{ totalUsers }], [{ activeAgents }], [{ liveListings }]] = await Promise.all([
+    db.select({ totalUsers: count() }).from(users),
+    db.select({ activeAgents: count() }).from(users).where(and(eq(users.role, "agent"), eq(users.status, "active"))),
+    db.select({ liveListings: count() }).from(properties).where(eq(properties.status, "active")),
+  ]);
+  res.json({ totalUsers, activeAgents, liveListings });
 });
 
 // Admin: list all users (paginated, filterable)
@@ -178,11 +189,33 @@ usersRouter.put("/:id/status", requireRole("admin"), async (req, res) => {
   res.json({ id: updated.id, status: updated.status });
 });
 
-// Admin: assign custom subscription
+// Admin: get user subscription details
+usersRouter.get("/:id/subscription", requireRole("admin"), async (req, res) => {
+  const [user] = await db.select({ id: users.id, name: users.name, email: users.email, role: users.role }).from(users).where(eq(users.id, req.params.id)).limit(1);
+  if (!user) return res.status(404).json({ message: "User not found" });
+
+  const [sub] = await db
+    .select()
+    .from(userSubscriptions)
+    .where(eq(userSubscriptions.userId, req.params.id))
+    .limit(1);
+
+  if (!sub) return res.json({ user, subscription: null, plan: null, state: "no_plan" });
+
+  const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, sub.planId)).limit(1);
+
+  const state = sub.stripeSubscriptionId ? "stripe" : sub.isCustom ? "custom" : "no_plan";
+  res.json({ user, subscription: sub, plan, state });
+});
+
+// Admin: assign or update custom subscription
 usersRouter.put("/:id/subscription", requireRole("admin"), async (req, res) => {
   const schema = z.object({
-    planId: z.string().uuid(),
-    listingSlotsOverride: z.number().int().positive().optional(),
+    customPlanName: z.string().min(1),
+    listingSlots: z.number().int().positive(),
+    features: z.record(z.boolean()).optional(),
+    planExpiry: z.string().nullable().optional(),
+    internalNotes: z.string().nullable().optional(),
   });
 
   try {
@@ -201,15 +234,25 @@ usersRouter.put("/:id/subscription", requireRole("admin"), async (req, res) => {
       });
     }
 
+    // Get or create the base Custom plan
+    const [customPlan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.name, "Custom")).limit(1);
+    if (!customPlan) return res.status(500).json({ message: "Base custom plan not found" });
+
+    const values = {
+      planId: customPlan.id,
+      isCustom: true,
+      customPlanName: data.customPlanName,
+      listingSlotsOverride: data.listingSlots,
+      featuresOverride: data.features || {},
+      internalNotes: data.internalNotes || null,
+      currentPeriodEnd: data.planExpiry ? new Date(data.planExpiry) : null,
+      status: "active" as const,
+    };
+
     if (existing) {
       const [updated] = await db
         .update(userSubscriptions)
-        .set({
-          planId: data.planId,
-          isCustom: true,
-          listingSlotsOverride: data.listingSlotsOverride,
-          status: "active",
-        })
+        .set(values)
         .where(eq(userSubscriptions.id, existing.id))
         .returning();
       return res.json(updated);
@@ -217,19 +260,41 @@ usersRouter.put("/:id/subscription", requireRole("admin"), async (req, res) => {
 
     const [created] = await db
       .insert(userSubscriptions)
-      .values({
-        userId: req.params.id,
-        planId: data.planId,
-        isCustom: true,
-        listingSlotsOverride: data.listingSlotsOverride,
-        status: "active",
-      })
+      .values({ userId: req.params.id, ...values })
       .returning();
+
+    // Notify the user
+    await notify(req.params.id, "plan_assigned", `Custom plan assigned: ${data.customPlanName}`, `You now have ${data.listingSlots} listing slots.`);
 
     res.status(201).json(created);
   } catch (err) {
     if (err instanceof z.ZodError)
       return res.status(400).json({ message: err.errors[0].message });
+    console.error("Subscription error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
+});
+
+// Admin: remove custom subscription
+usersRouter.delete("/:id/subscription", requireRole("admin"), async (req, res) => {
+  const [existing] = await db
+    .select()
+    .from(userSubscriptions)
+    .where(eq(userSubscriptions.userId, req.params.id))
+    .limit(1);
+
+  if (!existing) return res.status(404).json({ message: "No subscription found" });
+  if (existing.stripeSubscriptionId) {
+    return res.status(400).json({ message: "Cannot remove Stripe subscription from admin panel." });
+  }
+
+  await db.delete(userSubscriptions).where(eq(userSubscriptions.id, existing.id));
+  await notify(req.params.id, "plan_removed", "Custom plan removed", "Your custom plan has been removed by an administrator.");
+  res.json({ message: "Subscription removed" });
+});
+
+// Admin: list available plans
+usersRouter.get("/plans/list", requireRole("admin"), async (req, res) => {
+  const plans = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.isActive, true));
+  res.json(plans);
 });

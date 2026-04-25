@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "../db/index";
+import { db, notify } from "../db/index";
 import { inquiries, messages, properties, users } from "../db/schema";
 import { eq, and, or, desc, count } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
@@ -64,6 +64,10 @@ inquiriesRouter.post("/", requireAuth, async (req, res) => {
       .update(inquiries)
       .set({ updatedAt: new Date() })
       .where(eq(inquiries.id, inquiry.id));
+
+    // Notify the agent about the new inquiry
+    const [buyer] = await db.select({ name: users.name }).from(users).where(eq(users.id, req.session.userId!)).limit(1);
+    await notify(property.userId, "new_inquiry", `New inquiry on ${property.title}`, `${buyer?.name || "A buyer"} is interested in your property`, `/inquiries/${inquiry.id}`);
 
     res.status(201).json({ inquiry, message });
   } catch (err) {
@@ -211,6 +215,11 @@ inquiriesRouter.post("/:id/messages", requireAuth, async (req, res) => {
       .update(inquiries)
       .set({ updatedAt: new Date() })
       .where(eq(inquiries.id, req.params.id));
+
+    // Notify the other party
+    const recipientId = inquiry.buyerId === req.session.userId ? inquiry.agentId : inquiry.buyerId;
+    const [sender] = await db.select({ name: users.name }).from(users).where(eq(users.id, req.session.userId!)).limit(1);
+    await notify(recipientId, "new_message", `New message from ${sender?.name || "someone"}`, data.content.slice(0, 100), `/inquiries/${inquiry.id}`);
 
     res.status(201).json(message);
   } catch (err) {

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, Alert, Image } from "react-native";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Feather } from "@expo/vector-icons";
 import { useAuthStore } from "../../lib/auth";
 import { apiRequest } from "../../lib/api";
 import { colors } from "../../constants/theme";
@@ -195,8 +197,46 @@ function AgentAccount() {
 function AdminAccount() {
   const { user, logout } = useAuthStore();
   const [activeTab, setActiveTab] = useState("Overview");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
   const initials = user?.name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) || "?";
   const tabs = ["Overview", "Articles", "Security", "Settings"];
+  const queryClient = useQueryClient();
+
+  const filterParams = (() => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (filter === "active" || filter === "inactive") params.set("status", filter);
+    if (filter === "agents") params.set("role", "agent");
+    if (filter === "buyers") params.set("role", "buyer");
+    params.set("limit", "50");
+    return params.toString();
+  })();
+
+  const { data: stats } = useQuery({
+    queryKey: ["admin-stats"],
+    queryFn: () => apiRequest("/api/users/stats"),
+  });
+
+  const { data: usersData } = useQuery({
+    queryKey: ["admin-users", filterParams],
+    queryFn: () => apiRequest(`/api/users?${filterParams}`),
+  });
+
+  const allUsers = usersData?.users ?? [];
+
+  const updateStatus = async (userId: string, status: string) => {
+    await apiRequest(`/api/users/${userId}/status`, { method: "PUT", body: JSON.stringify({ status }) });
+    queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-stats"] });
+  };
+
+  const formatDate = (d: string) => {
+    const date = new Date(d);
+    return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  };
+
+  const getUserInitials = (name?: string) => name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) || "?";
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.offwhite }} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -223,7 +263,7 @@ function AdminAccount() {
 
         {activeTab === "Overview" && (
           <>
-            {/* Profile + Stats */}
+            {/* Profile card */}
             <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 16, backgroundColor: colors.white, marginBottom: 16, flexDirection: "row", alignItems: "center", gap: 12 }}>
               <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: colors.dark, justifyContent: "center", alignItems: "center" }}>
                 <Text style={{ fontFamily: "Inter_700Bold", fontSize: 20, color: colors.offwhite }}>{initials}</Text>
@@ -231,8 +271,13 @@ function AdminAccount() {
               <View><Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 16, color: colors.dark }}>{user?.name}</Text><Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm }}>System Administrator</Text><Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm }}>{user?.email}</Text></View>
             </View>
 
+            {/* Stat cards */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }} contentContainerStyle={{ gap: 8 }}>
-              {[{ label: "Total Users", value: "1,284" }, { label: "Active Agents", value: "347" }, { label: "Live Listings", value: "892" }].map((s) => (
+              {[
+                { label: "Total Users", value: stats?.totalUsers ?? "–" },
+                { label: "Active Agents", value: stats?.activeAgents ?? "–" },
+                { label: "Live Listings", value: stats?.liveListings ?? "–" },
+              ].map((s) => (
                 <View key={s.label} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 14, backgroundColor: colors.white, minWidth: 120 }}>
                   <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 10, color: colors.warm, textTransform: "uppercase" }}>{s.label}</Text>
                   <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 28, color: colors.dark, marginTop: 4 }}>{s.value}</Text>
@@ -240,8 +285,97 @@ function AdminAccount() {
               ))}
             </ScrollView>
 
-            <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 16, color: colors.dark, marginBottom: 8 }}>All Users</Text>
-            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: colors.warm, marginBottom: 16 }}>User management available in web dashboard</Text>
+            {/* All Users header */}
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 16, color: colors.dark }}>All Users</Text>
+            </View>
+
+            {/* Search */}
+            <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.white, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Feather name="search" size={16} color={colors.warm} />
+              <TextInput
+                placeholder="Search by name or email..."
+                placeholderTextColor={colors.warm}
+                value={search}
+                onChangeText={setSearch}
+                style={{ flex: 1, fontFamily: "Inter_400Regular", fontSize: 14, color: colors.dark, padding: 0 }}
+              />
+            </View>
+
+            {/* Filter chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }} contentContainerStyle={{ gap: 8 }}>
+              {[
+                { key: "all", label: "All" },
+                { key: "active", label: "Active" },
+                { key: "inactive", label: "Inactive" },
+                { key: "agents", label: "Agents" },
+                { key: "buyers", label: "Buyers" },
+              ].map((f) => (
+                <TouchableOpacity key={f.key} onPress={() => setFilter(f.key)} style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: filter === f.key ? colors.dark : colors.white, borderWidth: 1, borderColor: filter === f.key ? colors.dark : colors.border }}>
+                  <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: filter === f.key ? colors.offwhite : colors.warm }}>{f.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* User list */}
+            {allUsers.length === 0 ? (
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.warm }}>No users found</Text>
+            ) : (
+              allUsers.map((u: any) => (
+                <View key={u.id} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 16, backgroundColor: colors.white, marginBottom: 12, overflow: "hidden" }}>
+                  <View style={{ padding: 16 }}>
+                    {/* Avatar + Name + Role badge */}
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 4 }}>
+                      <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: colors.border, justifyContent: "center", alignItems: "center" }}>
+                        <Text style={{ fontFamily: "Inter_700Bold", fontSize: 18, color: colors.dark }}>{getUserInitials(u.name)}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                          <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 18, color: colors.dark }}>{u.name || "Unnamed"}</Text>
+                          <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                            <Text style={{ fontFamily: "Inter_500Medium", fontSize: 11, color: colors.warm, textTransform: "uppercase" }}>{u.role}</Text>
+                          </View>
+                        </View>
+                        <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: colors.warm, marginTop: 2 }}>{u.email}</Text>
+                      </View>
+                    </View>
+
+                    {/* Status + Joined date */}
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: u.status === "active" ? colors.dark : "transparent", borderWidth: u.status === "active" ? 0 : 1.5, borderColor: colors.warm }} />
+                        <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: u.status === "active" ? colors.dark : colors.warm }}>{u.status === "active" ? "Active" : "Inactive"}</Text>
+                      </View>
+                      <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: colors.warm }}>Joined {formatDate(u.createdAt)}</Text>
+                    </View>
+                  </View>
+
+                  {/* Separator line */}
+                  <View style={{ height: 1, backgroundColor: colors.border }} />
+
+                  {/* Action buttons */}
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 }}>
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      {u.status === "active" ? (
+                        <TouchableOpacity onPress={() => Alert.alert("Deactivate user?", `This will deactivate ${u.name}.`, [{ text: "Cancel" }, { text: "Deactivate", style: "destructive", onPress: () => updateStatus(u.id, "inactive") }])} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
+                          <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: colors.dark }}>Deactivate</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity onPress={() => updateStatus(u.id, "active")} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
+                          <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: colors.dark }}>Activate</Text>
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity onPress={() => Alert.alert("Delete user?", `This will permanently delete ${u.name}.`, [{ text: "Cancel" }, { text: "Delete", style: "destructive", onPress: () => updateStatus(u.id, "deleted") }])} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
+                        <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: colors.warm }}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <TouchableOpacity onPress={() => router.push(`/admin/plan/${u.id}`)}>
+                      <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: colors.dark }}>View</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            )}
           </>
         )}
 

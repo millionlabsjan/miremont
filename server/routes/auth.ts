@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "../db/index";
+import { db, notify } from "../db/index";
 import { users, sessions } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -59,6 +59,10 @@ authRouter.post("/signup", async (req, res) => {
         agencyName: data.agencyName,
       })
       .returning();
+
+    // Notify all admins about new signup
+    const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, "admin"));
+    await Promise.all(admins.map((a) => notify(a.id, "new_user", `New ${user.role} signed up`, `${user.name} (${user.email}) joined the platform`)));
 
     req.session.userId = user.id;
     req.session.role = user.role;

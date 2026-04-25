@@ -108,10 +108,6 @@ export default function HomeScreen() {
                   <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 16, color: colors.dark }}>{item.title}</Text>
                   <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: colors.warm, marginTop: 2 }}>📍 {item.city}, {item.country}</Text>
                 </View>
-                {/* Bookmark icon */}
-                <TouchableOpacity style={{ paddingLeft: 8, paddingTop: 2 }}>
-                  <Feather name="bookmark" size={20} color={colors.warm} />
-                </TouchableOpacity>
               </View>
               <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 22, color: colors.dark, marginTop: 8 }}>
                 £ {Number(item.price).toLocaleString()}

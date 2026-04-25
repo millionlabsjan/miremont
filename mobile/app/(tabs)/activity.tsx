@@ -1,8 +1,19 @@
 import { View, Text, ScrollView, TouchableOpacity, Image, Dimensions } from "react-native";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { apiRequest } from "../../lib/api";
 import { colors } from "../../constants/theme";
+
+function timeAgo(date: string) {
+  const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 
 const { width } = Dimensions.get("window");
 const cardWidth = (width - 52) / 2;
@@ -18,8 +29,21 @@ export default function ActivityScreen() {
     queryFn: () => apiRequest("/api/searches"),
   });
 
+  const { data: notifData } = useQuery({
+    queryKey: ["notifications"],
+    queryFn: () => apiRequest("/api/notifications?limit=10"),
+  });
+
+  const queryClient = useQueryClient();
   const favorites = Array.isArray(favData) ? favData : [];
   const searches = Array.isArray(searchData) ? searchData : [];
+  const recentActivity = notifData?.notifications ?? [];
+  const unreadCount = notifData?.unread ?? 0;
+
+  const markAsRead = async (id: string) => {
+    await apiRequest(`/api/notifications/${id}/read`, { method: "PUT" });
+    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+  };
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.offwhite }} contentContainerStyle={{ paddingBottom: 32 }}>
@@ -35,6 +59,10 @@ export default function ActivityScreen() {
           <View style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 16, backgroundColor: colors.white }}>
             <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 10, color: colors.warm, textTransform: "uppercase", letterSpacing: 1 }}>Saved Searches</Text>
             <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 32, color: colors.dark, marginTop: 4 }}>{searches.length}</Text>
+          </View>
+          <View style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 16, backgroundColor: colors.white }}>
+            <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 10, color: colors.warm, textTransform: "uppercase", letterSpacing: 1 }}>Unread</Text>
+            <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 32, color: colors.dark, marginTop: 4 }}>{unreadCount}</Text>
           </View>
         </View>
 
@@ -67,20 +95,20 @@ export default function ActivityScreen() {
 
         {/* Recent activity */}
         <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: colors.dark, marginBottom: 12 }}>Recent activity</Text>
-        {[
-          { text: 'New property matches your search "Waterfront Manhattan"', time: "2 hours ago" },
-          { text: "Price drop on 432 Park Avenue, New York", time: "3 hours ago" },
-          { text: "New message from agent Sarah Mitchell", time: "3 hours ago" },
-          { text: "Viewing scheduled for tomorrow at 2:00 PM", time: "8 hours ago" },
-        ].map((item, i) => (
-          <View key={i} style={{ flexDirection: "row", gap: 12, marginBottom: 16 }}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.dark, marginTop: 6 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.dark }}>{item.text}</Text>
-              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm, marginTop: 2 }}>{item.time}</Text>
-            </View>
-          </View>
-        ))}
+        {recentActivity.length === 0 ? (
+          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.warm }}>No recent activity</Text>
+        ) : (
+          recentActivity.map((item: any) => (
+            <TouchableOpacity key={item.id} onPress={() => !item.isRead && markAsRead(item.id)} style={{ flexDirection: "row", gap: 12, marginBottom: 16 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: item.isRead ? colors.warm : colors.accent, marginTop: 6 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: item.isRead ? "Inter_400Regular" : "Inter_600SemiBold", fontSize: 14, color: colors.dark }}>{item.title}</Text>
+                {item.body && <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: colors.warm, marginTop: 1 }}>{item.body}</Text>}
+                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm, marginTop: 2 }}>{timeAgo(item.createdAt)}</Text>
+              </View>
+            </TouchableOpacity>
+          ))
+        )}
 
         {/* Saved searches */}
         <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: colors.dark, marginTop: 16, marginBottom: 12 }}>Saved searches</Text>

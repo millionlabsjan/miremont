@@ -79,13 +79,7 @@ export default function PropertyDetailScreen() {
         </View>
 
         <View style={{ padding: 20 }}>
-          {/* Title & bookmark */}
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 26, color: colors.dark, flex: 1, lineHeight: 34 }}>{property.title}</Text>
-            <TouchableOpacity style={{ paddingLeft: 12, paddingTop: 4 }}>
-              <Feather name="bookmark" size={24} color={colors.dark} />
-            </TouchableOpacity>
-          </View>
+          <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 26, color: colors.dark, lineHeight: 34 }}>{property.title}</Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>
             <Feather name="map-pin" size={14} color={colors.warm} />
             <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.warm }}>{property.address || `${property.city}, ${property.country}`}</Text>

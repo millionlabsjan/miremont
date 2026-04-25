@@ -11,9 +11,9 @@ export const colors = {
 };
 
 export const API_URL = __DEV__
-  ? "http://192.168.1.140:3001"
+  ? "http://192.168.1.140:3002"
   : "https://your-production-url.com";
 
 export const WS_URL = __DEV__
-  ? "ws://192.168.1.140:3001/ws"
+  ? "ws://192.168.1.140:3002/ws"
   : "wss://your-production-url.com/ws";
