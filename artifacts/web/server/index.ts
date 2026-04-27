@@ -77,7 +77,10 @@ if (process.env.NODE_ENV === "production") {
   // In dev, Vite serves the frontend via proxy
   const { createServer: createViteServer } = await import("vite");
   const vite = await createViteServer({
-    server: { middlewareMode: true },
+    server: {
+      middlewareMode: true,
+      allowedHosts: true,
+    },
     root: path.resolve(__dirname, "../client"),
     appType: "spa",
   });
