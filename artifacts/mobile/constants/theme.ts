@@ -10,10 +10,23 @@ export const colors = {
   red: "#dc2626",
 };
 
-export const API_URL = __DEV__
-  ? "http://192.168.1.140:3002"
-  : "https://your-production-url.com";
+const explicitApiUrl = process.env.EXPO_PUBLIC_API_URL;
+const explicitWsUrl = process.env.EXPO_PUBLIC_WS_URL;
+const domain = process.env.EXPO_PUBLIC_DOMAIN;
+const localHost = process.env.EXPO_PUBLIC_LOCAL_API_HOST || "localhost";
+const localPort = process.env.EXPO_PUBLIC_LOCAL_API_PORT || "3000";
 
-export const WS_URL = __DEV__
-  ? "ws://192.168.1.140:3002/ws"
-  : "wss://your-production-url.com/ws";
+function resolveApiUrl(): string {
+  if (explicitApiUrl) return explicitApiUrl;
+  if (domain) return `https://${domain}`;
+  return `http://${localHost}:${localPort}`;
+}
+
+function resolveWsUrl(): string {
+  if (explicitWsUrl) return explicitWsUrl;
+  if (domain) return `wss://${domain}/ws`;
+  return `ws://${localHost}:${localPort}/ws`;
+}
+
+export const API_URL = resolveApiUrl();
+export const WS_URL = resolveWsUrl();
