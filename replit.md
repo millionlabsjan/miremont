@@ -29,7 +29,7 @@ These need real values for full functionality (placeholders set so the server ca
 
 - `POSTMARK_API_TOKEN` — Postmark server token; needed for password-reset emails.
 - `SESSION_SECRET` — already set; used to sign Express sessions.
-- `GOOGLE_MAPS_KEY` — referenced literally in `mobile/app.json` for `react-native-maps`; replace before mobile production builds.
+- `GOOGLE_MAPS_API_KEY` — Google Maps API key (with Maps SDK for iOS and Android enabled). Read by `artifacts/mobile/app.config.js` and injected into `ios.config.googleMapsApiKey` and `android.config.googleMaps.apiKey` for `react-native-maps`. Required for tiles to render in built mobile binaries; the config throws during EAS/CI builds if missing. For EAS cloud builds, also register the value as an EAS secret (`eas secret:create --scope project --name GOOGLE_MAPS_API_KEY --value <key>`).
 - (Optional) `STRIPE_SECRET_KEY`, etc. for payment routes.
 
 ## Key Commands
