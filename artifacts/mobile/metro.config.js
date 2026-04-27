@@ -1,28 +1,6 @@
 const path = require("path");
 const { getDefaultConfig } = require("expo/metro-config");
 
-/**
- * Metro config for the mobile artifact.
- *
- * Two reasons this file exists:
- *
- * 1. Web bundle compatibility for `react-native-maps`.
- *    The library imports `react-native/Libraries/Utilities/codegenNativeCommands`,
- *    which is native-only and breaks the web bundle. We redirect imports of
- *    `react-native-maps` to a small web stub WHEN AND ONLY WHEN
- *    `platform === "web"`. iOS/Android resolution is left untouched so Expo Go
- *    and native builds still get the real package.
- *
- * 2. Hosting under the Replit workspace iframe (`*.picard.replit.dev`).
- *    Unlike Vite (which has `server.allowedHosts` and rejects unknown hosts
- *    by default), Expo's dev server does NOT host-validate incoming requests:
- *    arbitrary `Host` headers return 200 with the full HTML/JS bundle. So
- *    no host-allow middleware is required here. Verified empirically against
- *    `*.picard.replit.dev`. The `EXPO_PACKAGER_PROXY_URL` env var (set in
- *    package.json's `dev` script) is what tells the manifest/QR flow to
- *    advertise the public Replit URL instead of `localhost`.
- */
-
 const config = getDefaultConfig(__dirname);
 
 const reactNativeMapsWebStub = path.resolve(
@@ -31,20 +9,47 @@ const reactNativeMapsWebStub = path.resolve(
 );
 
 const upstreamResolveRequest = config.resolver.resolveRequest;
-
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (platform === "web" && moduleName === "react-native-maps") {
-    return {
-      type: "sourceFile",
-      filePath: reactNativeMapsWebStub,
-    };
+    return { type: "sourceFile", filePath: reactNativeMapsWebStub };
   }
-
   if (typeof upstreamResolveRequest === "function") {
     return upstreamResolveRequest(context, moduleName, platform);
   }
-
   return context.resolveRequest(context, moduleName, platform);
+};
+
+const allowReplitHost = (req, res, next) => {
+  const origin = req.headers && req.headers.origin;
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      req.headers["access-control-request-headers"] ||
+        "Origin, Content-Type, Accept, Authorization, X-Requested-With"
+    );
+    res.setHeader(
+      "Access-Control-Allow-Methods",
+      "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+    );
+  }
+  if (req.method === "OPTIONS") {
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
+  next();
+};
+
+const upstreamEnhanceMiddleware = config.server && config.server.enhanceMiddleware;
+config.server = config.server || {};
+config.server.enhanceMiddleware = (metroMiddleware, server) => {
+  const base = upstreamEnhanceMiddleware
+    ? upstreamEnhanceMiddleware(metroMiddleware, server)
+    : metroMiddleware;
+  return (req, res, next) => allowReplitHost(req, res, () => base(req, res, next));
 };
 
 module.exports = config;
