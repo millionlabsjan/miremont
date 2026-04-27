@@ -10,11 +10,16 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Node.js version**: 24
 - **Package manager**: pnpm
 - **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
+- **Database**: PostgreSQL (Replit-managed; `DATABASE_URL` + `PG*` env vars set)
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+
+## Artifacts
+
+- `artifacts/web` — `kind="web"`, `router="path"`, mounted at `/`. Dev: `npm run dev` on port 5000 (Vite placeholder; user will replace with Express+Vite from GitHub).
+- `artifacts/mobile` — `kind="mobile"`, `router="expo-domain"`. Dev: `npx expo start` (via `pnpm dev`). QR card visible in preview pane for "Try on device".
+
+Both artifacts share the single Replit Postgres instance via `DATABASE_URL`.
 
 ## Key Commands
 
@@ -22,6 +27,5 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
