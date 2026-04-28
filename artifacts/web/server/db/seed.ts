@@ -1,9 +1,90 @@
 import { db } from "./index";
-import { users, categories, properties, propertyCategories, articles, articleContents } from "./schema";
+import {
+  users,
+  categories,
+  properties,
+  propertyCategories,
+  articles,
+  articleContents,
+  subscriptionPlans,
+  userSubscriptions,
+} from "./schema";
 import argon2 from "argon2";
+import { eq } from "drizzle-orm";
+
+const PLAN_SEEDS = [
+  {
+    name: "Custom",
+    listingSlots: 0,
+    priceUsd: null as string | null,
+    isActive: false,
+    features: {
+      Pool: false,
+      "Chat support": false,
+      Analytics: false,
+      "Priority search": false,
+      "Custom branding": false,
+      "Team seats": false,
+    },
+  },
+  {
+    name: "Basic",
+    listingSlots: 5,
+    priceUsd: "29.00",
+    isActive: true,
+    features: {
+      Pool: false,
+      "Chat support": true,
+      Analytics: false,
+      "Priority search": false,
+      "Custom branding": false,
+      "Team seats": false,
+    },
+  },
+  {
+    name: "Pro",
+    listingSlots: 25,
+    priceUsd: "99.00",
+    isActive: true,
+    features: {
+      Pool: true,
+      "Chat support": true,
+      Analytics: true,
+      "Priority search": true,
+      "Custom branding": false,
+      "Team seats": false,
+    },
+  },
+  {
+    name: "Elite",
+    listingSlots: 100,
+    priceUsd: "299.00",
+    isActive: true,
+    features: {
+      Pool: true,
+      "Chat support": true,
+      Analytics: true,
+      "Priority search": true,
+      "Custom branding": true,
+      "Team seats": true,
+    },
+  },
+];
 
 async function seed() {
   console.log("Seeding database...");
+
+  // Subscription plans (idempotent: lookup-by-name, insert if missing)
+  for (const plan of PLAN_SEEDS) {
+    const [existing] = await db
+      .select()
+      .from(subscriptionPlans)
+      .where(eq(subscriptionPlans.name, plan.name))
+      .limit(1);
+    if (!existing) {
+      await db.insert(subscriptionPlans).values(plan);
+    }
+  }
 
   // Create admin user
   const adminPassword = await argon2.hash("admin123");
@@ -21,7 +102,7 @@ async function seed() {
 
   // Create agent user
   const agentPassword = await argon2.hash("agent123");
-  const [agent] = await db
+  const [insertedAgent] = await db
     .insert(users)
     .values({
       email: "emma@luxuryrealty.com",
@@ -33,6 +114,9 @@ async function seed() {
     })
     .onConflictDoNothing()
     .returning();
+  const agent = insertedAgent
+    ?? (await db.select().from(users).where(eq(users.email, "emma@luxuryrealty.com")).limit(1))[0];
+  const agentIsNew = !!insertedAgent;
 
   // Create buyer user
   const buyerPassword = await argon2.hash("buyer123");
@@ -64,8 +148,38 @@ async function seed() {
     .onConflictDoNothing()
     .returning();
 
-  if (!agent) {
-    console.log("Agent already exists, skipping property seed");
+  // Give the agent an active starter subscription on the Pro plan, if missing
+  if (agent) {
+    const [existingSub] = await db
+      .select()
+      .from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, agent.id))
+      .limit(1);
+    if (!existingSub) {
+      const [proPlan] = await db
+        .select()
+        .from(subscriptionPlans)
+        .where(eq(subscriptionPlans.name, "Pro"))
+        .limit(1);
+      if (proPlan) {
+        const now = new Date();
+        const periodEnd = new Date(now);
+        periodEnd.setDate(periodEnd.getDate() + 30);
+        await db.insert(userSubscriptions).values({
+          userId: agent.id,
+          planId: proPlan.id,
+          status: "active",
+          isCustom: false,
+          currentPeriodStart: now,
+          currentPeriodEnd: periodEnd,
+        });
+      }
+    }
+  }
+
+  if (!agentIsNew) {
+    console.log("Agent already existed; skipped property/article seed.");
+    console.log("Seeded plans:", PLAN_SEEDS.map((p) => p.name).join(", "));
     process.exit(0);
   }
 
@@ -256,7 +370,6 @@ async function seed() {
       })
       .returning();
 
-    const { eq } = await import("drizzle-orm");
     await db
       .update(articles)
       .set({ currentContentId: content.id })
@@ -267,6 +380,8 @@ async function seed() {
   console.log("  Admin: admin@thepropertycatalogue.com / admin123");
   console.log("  Agent: emma@luxuryrealty.com / agent123");
   console.log("  Buyer: sophia@example.com / buyer123");
+  console.log("  Plans: " + PLAN_SEEDS.map((p) => p.name).join(", "));
+  console.log("  Agent subscription: Pro (active, 30-day period)");
   process.exit(0);
 }
 
