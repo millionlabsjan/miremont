@@ -43,7 +43,7 @@ export default function HomeScreen() {
     <ScrollView style={{ flex: 1, backgroundColor: colors.offwhite }} contentContainerStyle={{ paddingBottom: 32 }}>
       {/* Header */}
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 56, paddingBottom: 8 }}>
-        <Text style={{ fontFamily: "Inter_400Regular", fontSize: 16, color: colors.dark }}>
+        <Text style={{ fontFamily: "PlayfairDisplay_600SemiBold", fontSize: 22, color: colors.dark }}>
           Good morning, {displayName}
         </Text>
         <TouchableOpacity style={{ width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: colors.border, justifyContent: "center", alignItems: "center" }}>

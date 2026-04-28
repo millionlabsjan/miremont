@@ -3,6 +3,8 @@ import { useAuthStore } from "../../lib/auth";
 import { colors } from "../../constants/theme";
 import { View, ActivityIndicator } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "../../lib/api";
 
 export default function TabLayout() {
   const { user, isLoading } = useAuthStore();
@@ -14,6 +16,17 @@ export default function TabLayout() {
       </View>
     );
   }
+
+  const { data: conversations } = useQuery({
+    queryKey: ["conversations"],
+    queryFn: () => apiRequest("/api/inquiries"),
+    refetchInterval: 10000,
+    enabled: !!user,
+  });
+
+  const totalUnread = Array.isArray(conversations)
+    ? conversations.reduce((sum: number, c: any) => sum + (c.unreadCount || 0), 0)
+    : 0;
 
   if (!user) return <Redirect href="/(auth)/login" />;
 
@@ -71,6 +84,8 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => (
             <Feather name="message-square" size={size} color={color} />
           ),
+          tabBarBadge: totalUnread > 0 ? totalUnread : undefined,
+          tabBarBadgeStyle: { backgroundColor: colors.dark, color: colors.offwhite, fontSize: 10, fontFamily: "Inter_600SemiBold" },
         }}
       />
       <Tabs.Screen

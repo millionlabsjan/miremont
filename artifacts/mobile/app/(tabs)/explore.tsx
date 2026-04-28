@@ -40,7 +40,10 @@ export default function ExploreScreen() {
     queryFn: () => apiRequest(`/api/properties?q=${search}&limit=20`),
   });
 
-  const properties = data?.properties || [];
+  const allProperties = data?.properties || [];
+  const properties = activeCategory === "All"
+    ? allProperties
+    : allProperties.filter((p: any) => p.categories?.some((c: string) => c.toLowerCase() === activeCategory.toLowerCase()));
 
   const visibleProperties = useMemo(() => {
     if (!mapRegion) return properties.filter((p: any) => p.latitude && p.longitude);
@@ -257,10 +260,7 @@ export default function ExploreScreen() {
       <View style={{ paddingTop: 56, paddingHorizontal: 20, paddingBottom: 8 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 24, color: colors.dark }}>Explore</Text>
-          <View style={{ flexDirection: "row", gap: 16 }}>
-            <TouchableOpacity><Feather name="align-center" size={20} color={colors.dark} /></TouchableOpacity>
-            <TouchableOpacity onPress={() => setShowMap(true)}><Feather name="map-pin" size={20} color={colors.dark} /></TouchableOpacity>
-          </View>
+          <TouchableOpacity onPress={() => setShowMap(true)}><Feather name="map-pin" size={20} color={colors.dark} /></TouchableOpacity>
         </View>
 
         <TextInput
@@ -271,6 +271,28 @@ export default function ExploreScreen() {
           style={{ height: 44, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 40, fontFamily: "Inter_400Regular", fontSize: 14, color: colors.dark }}
         />
         <View style={{ position: "absolute", left: 32, bottom: 20 }}><Feather name="search" size={16} color={colors.warm} /></View>
+      </View>
+
+      {/* Category filter chips */}
+      <View style={{ height: 44, marginBottom: 12 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 8, alignItems: "center", height: 44 }}>
+          {CATEGORIES.map((cat) => {
+            const isActive = activeCategory === cat;
+            return (
+              <TouchableOpacity
+                key={cat}
+                onPress={() => setActiveCategory(cat)}
+                style={{
+                  height: 36, paddingHorizontal: 16, borderRadius: 20, justifyContent: "center",
+                  backgroundColor: isActive ? colors.dark : colors.offwhite,
+                  borderWidth: 1, borderColor: isActive ? colors.dark : colors.border,
+                }}
+              >
+                <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: isActive ? colors.offwhite : colors.dark }}>{cat}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {/* Property list */}

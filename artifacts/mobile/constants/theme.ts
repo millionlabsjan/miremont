@@ -37,6 +37,10 @@ function resolveWsUrl(): string {
     }
     return "/ws";
   }
+  // Derive from API URL if explicitly set (keeps host/port in sync)
+  if (explicitApiUrl) {
+    return explicitApiUrl.replace(/^http/, "ws") + "/ws";
+  }
   if (domain) return `wss://${domain}/ws`;
   return `ws://${localHost}:${localPort}/ws`;
 }

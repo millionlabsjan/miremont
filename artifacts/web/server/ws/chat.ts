@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { db } from "../db/index";
-import { messages, inquiries } from "../db/schema";
-import { eq, and, or } from "drizzle-orm";
+import { messages, messageReads, inquiries } from "../db/schema";
+import { eq, and, or, ne } from "drizzle-orm";
 import type { IncomingMessage } from "http";
 
 interface AuthenticatedWS extends WebSocket {
@@ -106,18 +106,23 @@ export function setupWebSocket(wss: WebSocketServer) {
           }
 
           case "mark_read": {
-            if (!ws.userId) return;
-            await db
-              .update(messages)
-              .set({ isRead: true })
-              .where(
-                and(
-                  eq(messages.inquiryId, msg.inquiryId),
-                  eq(messages.isRead, false)
-                )
-              );
+            if (!ws.userId || !msg.messageIds?.length) return;
 
-            // Notify the sender
+            // Insert into message_reads
+            await db.insert(messageReads)
+              .values(msg.messageIds.map((mid: string) => ({ messageId: mid, userId: ws.userId! })))
+              .onConflictDoNothing();
+
+            // Legacy compat
+            await db.update(messages).set({ isRead: true }).where(
+              and(
+                eq(messages.inquiryId, msg.inquiryId),
+                eq(messages.isRead, false),
+                ne(messages.senderId, ws.userId!)
+              )
+            );
+
+            // Notify the other party
             const [inq] = await db
               .select()
               .from(inquiries)

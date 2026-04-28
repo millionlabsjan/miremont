@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { View, Text, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, Image } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
@@ -28,6 +28,42 @@ export default function ChatThreadScreen() {
   });
   const convo = Array.isArray(conversations) ? conversations.find((c: any) => c.id === id) : null;
 
+  const msgs = Array.isArray(messages) ? messages : [];
+
+  // Mark unread messages as read
+  const markRead = useCallback(async (msgList: any[]) => {
+    if (!user) return;
+    const unreadIds = msgList
+      .filter((m: any) => m.senderId !== user.id)
+      .map((m: any) => m.id);
+    if (unreadIds.length === 0) return;
+
+    // Optimistic: invalidate conversations immediately for badge update
+    try {
+      await apiRequest("/api/inquiries/messages/mark-read", {
+        method: "POST",
+        body: JSON.stringify({ messageIds: unreadIds }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+
+      // Also notify via WebSocket for instant feedback to other party
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: "mark_read",
+          inquiryId: id,
+          messageIds: unreadIds,
+        }));
+      }
+    } catch {}
+  }, [user, id, queryClient]);
+
+  // Mark read when messages load or update
+  useEffect(() => {
+    if (msgs.length > 0) {
+      markRead(msgs);
+    }
+  }, [msgs.length]);
+
   // WebSocket connection
   useEffect(() => {
     if (!user) return;
@@ -38,10 +74,16 @@ export default function ChatThreadScreen() {
       ws.send(JSON.stringify({ type: "join_inquiry", inquiryId: id }));
     };
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === "new_message") {
-        queryClient.invalidateQueries({ queryKey: ["messages", id] });
-      }
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "new_message") {
+          queryClient.invalidateQueries({ queryKey: ["messages", id] });
+          queryClient.invalidateQueries({ queryKey: ["conversations"] });
+        }
+        if (data.type === "messages_read") {
+          queryClient.invalidateQueries({ queryKey: ["conversations"] });
+        }
+      } catch {}
     };
     return () => ws.close();
   }, [user, id]);
@@ -55,9 +97,8 @@ export default function ChatThreadScreen() {
     }
     setMessageText("");
     queryClient.invalidateQueries({ queryKey: ["messages", id] });
+    queryClient.invalidateQueries({ queryKey: ["conversations"] });
   };
-
-  const msgs = Array.isArray(messages) ? messages : [];
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, backgroundColor: colors.offwhite }}>
@@ -81,7 +122,7 @@ export default function ChatThreadScreen() {
         {/* Property context bar */}
         {convo?.property && (
           <TouchableOpacity
-            onPress={() => router.push(`/property/${convo.id}` as any)}
+            onPress={() => router.push(`/property/${convo.propertyId}` as any)}
             style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.input, borderTopWidth: 1, borderTopColor: colors.border }}
           >
             <View style={{ width: 40, height: 32, borderRadius: 6, backgroundColor: colors.border, overflow: "hidden" }}>

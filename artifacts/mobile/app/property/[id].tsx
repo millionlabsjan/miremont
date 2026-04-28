@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { View, Text, ScrollView, TouchableOpacity, Image, Dimensions, FlatList } from "react-native";
+import { View, Text, ScrollView, TouchableOpacity, Image, Dimensions, FlatList, Alert } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -187,7 +187,17 @@ export default function PropertyDetailScreen() {
       {/* Bottom CTA */}
       <View style={{ position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingVertical: 16, paddingBottom: 36, backgroundColor: colors.offwhite, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: "row", gap: 8 }}>
         <TouchableOpacity
-          onPress={() => router.push(`/chat/${id}?newInquiry=true&propertyId=${id}`)}
+          onPress={async () => {
+            try {
+              const result = await apiRequest("/api/inquiries", {
+                method: "POST",
+                body: JSON.stringify({ propertyId: id }),
+              });
+              router.push(`/chat/${result.inquiry.id}`);
+            } catch (e: any) {
+              Alert.alert("Error", e.message || "Could not start conversation");
+            }
+          }}
           style={{ flex: 1, height: 52, backgroundColor: colors.dark, borderRadius: 10, justifyContent: "center", alignItems: "center" }}
         >
           <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: colors.offwhite }}>Contact agent</Text>

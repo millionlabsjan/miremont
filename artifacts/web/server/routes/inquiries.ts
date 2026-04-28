@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, notify } from "../db/index";
-import { inquiries, messages, properties, users } from "../db/schema";
-import { eq, and, or, desc, count } from "drizzle-orm";
+import { inquiries, messages, messageReads, properties, users } from "../db/schema";
+import { eq, and, or, desc, count, notExists, ne, sql } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { z } from "zod";
 
@@ -11,7 +11,7 @@ export const inquiriesRouter = Router();
 inquiriesRouter.post("/", requireAuth, async (req, res) => {
   const schema = z.object({
     propertyId: z.string().uuid(),
-    message: z.string().min(1),
+    message: z.string().min(1).optional(),
   });
 
   try {
@@ -50,20 +50,23 @@ inquiriesRouter.post("/", requireAuth, async (req, res) => {
         .returning();
     }
 
-    // Add the message
-    const [message] = await db
-      .insert(messages)
-      .values({
-        inquiryId: inquiry.id,
-        senderId: req.session.userId!,
-        content: data.message,
-      })
-      .returning();
+    // Add message only if provided
+    let message = null;
+    if (data.message) {
+      [message] = await db
+        .insert(messages)
+        .values({
+          inquiryId: inquiry.id,
+          senderId: req.session.userId!,
+          content: data.message,
+        })
+        .returning();
 
-    await db
-      .update(inquiries)
-      .set({ updatedAt: new Date() })
-      .where(eq(inquiries.id, inquiry.id));
+      await db
+        .update(inquiries)
+        .set({ updatedAt: new Date() })
+        .where(eq(inquiries.id, inquiry.id));
+    }
 
     // Notify the agent about the new inquiry
     const [buyer] = await db.select({ name: users.name }).from(users).where(eq(users.id, req.session.userId!)).limit(1);
@@ -124,8 +127,15 @@ inquiriesRouter.get("/", requireAuth, async (req, res) => {
         .where(
           and(
             eq(messages.inquiryId, inq.id),
-            eq(messages.isRead, false),
-            eq(messages.senderId, otherUserId)
+            ne(messages.senderId, userId),
+            notExists(
+              db.select({ x: sql`1` }).from(messageReads).where(
+                and(
+                  eq(messageReads.messageId, messages.id),
+                  eq(messageReads.userId, sql`${userId}::uuid`)
+                )
+              )
+            )
           )
         );
 
@@ -139,7 +149,61 @@ inquiriesRouter.get("/", requireAuth, async (req, res) => {
     })
   );
 
-  res.json(enriched);
+  res.json(enriched.filter((c) => c.lastMessage != null));
+});
+
+// Mark messages as read (must be before /:id routes)
+inquiriesRouter.post("/messages/mark-read", requireAuth, async (req, res) => {
+  const schema = z.object({ messageIds: z.array(z.string().uuid()).min(1) });
+
+  try {
+    const { messageIds } = schema.parse(req.body);
+    const userId = req.session.userId!;
+
+    await db.insert(messageReads)
+      .values(messageIds.map((mid) => ({ messageId: mid, userId })))
+      .onConflictDoNothing();
+
+    // Also update legacy isRead for web client compat
+    await db.update(messages).set({ isRead: true }).where(
+      and(
+        sql`${messages.id} = ANY(${messageIds}::uuid[])`,
+        ne(messages.senderId, userId)
+      )
+    );
+
+    res.json({ marked: messageIds.length });
+  } catch (err) {
+    if (err instanceof z.ZodError)
+      return res.status(400).json({ message: err.errors[0].message });
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// Get total unread count (must be before /:id routes)
+inquiriesRouter.get("/messages/unread-count", requireAuth, async (req, res) => {
+  const userId = req.session.userId!;
+
+  const [{ total }] = await db
+    .select({ total: count() })
+    .from(messages)
+    .innerJoin(inquiries, eq(messages.inquiryId, inquiries.id))
+    .where(
+      and(
+        or(eq(inquiries.buyerId, userId), eq(inquiries.agentId, userId)),
+        ne(messages.senderId, userId),
+        notExists(
+          db.select({ x: sql`1` }).from(messageReads).where(
+            and(
+              eq(messageReads.messageId, messages.id),
+              eq(messageReads.userId, sql`${userId}::uuid`)
+            )
+          )
+        )
+      )
+    );
+
+  res.json({ unreadCount: total });
 });
 
 // Get messages for an inquiry
@@ -163,20 +227,6 @@ inquiriesRouter.get("/:id/messages", requireAuth, async (req, res) => {
     .from(messages)
     .where(eq(messages.inquiryId, req.params.id))
     .orderBy(messages.createdAt);
-
-  // Mark messages from other party as read
-  const otherUserId =
-    inquiry.buyerId === userId ? inquiry.agentId : inquiry.buyerId;
-  await db
-    .update(messages)
-    .set({ isRead: true })
-    .where(
-      and(
-        eq(messages.inquiryId, req.params.id),
-        eq(messages.senderId, otherUserId),
-        eq(messages.isRead, false)
-      )
-    );
 
   res.json(msgs);
 });
@@ -228,3 +278,4 @@ inquiriesRouter.post("/:id/messages", requireAuth, async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
+

@@ -1,8 +1,12 @@
 import postmark from "postmark";
 
-const client = new postmark.ServerClient(
-  process.env.POSTMARK_API_TOKEN || ""
-);
+function getClient() {
+  const token = process.env.POSTMARK_API_TOKEN;
+  if (!token) {
+    throw new Error("POSTMARK_API_TOKEN is not set — cannot send emails");
+  }
+  return new postmark.ServerClient(token);
+}
 
 const SENDER_EMAIL =
   process.env.POSTMARK_SENDER_EMAIL || "info@thepropertycatalogue.com";
@@ -13,7 +17,7 @@ export async function sendPasswordResetEmail(
 ): Promise<void> {
   const resetLink = `miremont://reset-password?token=${resetToken}`;
 
-  await client.sendEmail({
+  await getClient().sendEmail({
     From: SENDER_EMAIL,
     To: to,
     Subject: "Reset your password — The Property Catalogue",
