@@ -179,7 +179,12 @@ async function seed() {
 
   if (!agentIsNew) {
     console.log("Agent already existed; skipped property/article seed.");
-    console.log("Seeded plans:", PLAN_SEEDS.map((p) => p.name).join(", "));
+    console.log("Seed completed!");
+    console.log("  Admin: admin@thepropertycatalogue.com / admin123");
+    console.log("  Agent: emma@luxuryrealty.com / agent123");
+    console.log("  Buyer: sophia@example.com / buyer123");
+    console.log("  Plans: " + PLAN_SEEDS.map((p) => p.name).join(", "));
+    console.log("  Agent subscription: Pro (active, 30-day period)");
     process.exit(0);
   }
 
