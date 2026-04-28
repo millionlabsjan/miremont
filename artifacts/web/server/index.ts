@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import session from "express-session";
 import cookieParser from "cookie-parser";
+import cors from "cors";
 import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -23,6 +24,19 @@ const server = createServer(app);
 
 // Session store (memory for dev, replace with pg store for prod)
 const MemoryStore = (await import("memorystore")).default(session);
+
+// CORS: allow the mobile (expo) bundle and other dev origins to call the API.
+// Reflects request origin so credentials work; safe in dev. In production,
+// the web client and API are served from the same origin so this is a no-op
+// for normal traffic, but still permits authenticated cross-origin calls
+// from the deployed mobile bundle.
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+    allowedHeaders: ["Content-Type", "x-session-cookie"],
+  })
+);
 
 app.use(express.json());
 
