@@ -4,6 +4,12 @@ const { getDefaultConfig } = require("expo/metro-config");
 
 const config = getDefaultConfig(__dirname);
 
+// Ensure Metro resolves packages installed in this workspace package
+config.resolver.nodeModulesPaths = [
+  path.resolve(__dirname, "node_modules"),
+  path.resolve(__dirname, "../../node_modules"),
+];
+
 const API_TARGET_HOST = process.env.WEB_API_HOST || "localhost";
 const API_TARGET_PORT = parseInt(process.env.WEB_API_PORT || "5000", 10);
 

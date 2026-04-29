@@ -194,6 +194,78 @@ function AgentAccount() {
   );
 }
 
+function AdminArticlesTab() {
+  const [statusFilter, setStatusFilter] = useState("all");
+  const queryClient = useQueryClient();
+
+  const params = new URLSearchParams();
+  if (statusFilter !== "all") params.set("status", statusFilter);
+  params.set("limit", "50");
+  const qs = params.toString();
+
+  const { data } = useQuery({
+    queryKey: ["admin-articles", statusFilter],
+    queryFn: () => apiRequest(`/api/articles?${qs}`),
+  });
+
+  const articles = data?.articles || [];
+  const statuses = ["all", "published", "draft", "archived"];
+
+  const formatDate = (d: string) => new Date(d).toLocaleDateString("en-GB", { month: "short", day: "numeric", year: "numeric" });
+
+  return (
+    <>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: colors.dark }}>Articles</Text>
+        <TouchableOpacity onPress={() => router.push("/admin/article-editor" as any)} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.dark, justifyContent: "center", alignItems: "center" }}>
+          <Feather name="plus" size={20} color={colors.offwhite} />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }} contentContainerStyle={{ gap: 8 }}>
+        {statuses.map((s) => (
+          <TouchableOpacity key={s} onPress={() => setStatusFilter(s)} style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: statusFilter === s ? colors.dark : colors.offwhite, borderWidth: 1, borderColor: statusFilter === s ? colors.dark : colors.border }}>
+            <Text style={{ fontFamily: statusFilter === s ? "Inter_600SemiBold" : "Inter_500Medium", fontSize: 13, color: statusFilter === s ? colors.offwhite : colors.warm, textTransform: "capitalize" }}>{s === "all" ? "All" : s}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {articles.length === 0 ? (
+        <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.warm }}>No articles found</Text>
+      ) : (
+        articles.map((article: any) => (
+          <TouchableOpacity key={article.id} onPress={() => router.push({ pathname: "/admin/article-editor", params: { id: article.id } } as any)} style={{ backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 17, marginBottom: 12 }}>
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <View style={{ width: 80, height: 80, borderRadius: 10, overflow: "hidden", backgroundColor: colors.border }}>
+                {article.thumbnailUrl ? (
+                  <Image source={{ uri: article.thumbnailUrl }} style={{ width: 80, height: 80 }} />
+                ) : (
+                  <View style={{ width: 80, height: 80, backgroundColor: colors.border }} />
+                )}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: "PlayfairDisplay_600SemiBold", fontSize: 16, color: colors.dark, lineHeight: 21 }} numberOfLines={2}>{article.content?.titleEn || "Untitled"}</Text>
+                <View style={{ backgroundColor: colors.offwhite, borderWidth: 1, borderColor: colors.border, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, alignSelf: "flex-start", marginTop: 8 }}>
+                  <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: colors.warm, textTransform: "uppercase", letterSpacing: 0.5 }}>{article.status}</Text>
+                </View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 }}>
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm }}>{article.author?.name || "Unknown"}</Text>
+                  {article.publishedDate && (
+                    <>
+                      <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm }}>·</Text>
+                      <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm }}>{formatDate(article.publishedDate)}</Text>
+                    </>
+                  )}
+                </View>
+              </View>
+            </View>
+          </TouchableOpacity>
+        ))
+      )}
+    </>
+  );
+}
+
 function AdminAccount() {
   const { user, logout } = useAuthStore();
   const [activeTab, setActiveTab] = useState("Overview");
@@ -249,17 +321,17 @@ function AdminAccount() {
           </View>
         </View>
 
-        <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 28, color: colors.dark }}>My Account</Text>
+        <Text style={{ fontFamily: "Inter_700Bold", fontSize: 30, color: colors.dark, lineHeight: 38 }}>My Account</Text>
         <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.warm, marginBottom: 16 }}>{user?.email}</Text>
 
         {/* Tabs */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }} contentContainerStyle={{ gap: 4 }}>
+        <View style={{ flexDirection: "row", borderBottomWidth: 1, borderBottomColor: colors.border, marginBottom: 20 }}>
           {tabs.map((tab) => (
-            <TouchableOpacity key={tab} onPress={() => setActiveTab(tab)} style={{ paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: activeTab === tab ? colors.dark : "transparent" }}>
+            <TouchableOpacity key={tab} onPress={() => setActiveTab(tab)} style={{ paddingRight: 24, paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: activeTab === tab ? colors.dark : "transparent", marginBottom: -1 }}>
               <Text style={{ fontFamily: activeTab === tab ? "Inter_600SemiBold" : "Inter_400Regular", fontSize: 14, color: activeTab === tab ? colors.dark : colors.warm }}>{tab}</Text>
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
 
         {activeTab === "Overview" && (
           <>
@@ -278,9 +350,9 @@ function AdminAccount() {
                 { label: "Active Agents", value: stats?.activeAgents ?? "–" },
                 { label: "Live Listings", value: stats?.liveListings ?? "–" },
               ].map((s) => (
-                <View key={s.label} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 14, backgroundColor: colors.white, minWidth: 120 }}>
-                  <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 10, color: colors.warm, textTransform: "uppercase" }}>{s.label}</Text>
-                  <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 28, color: colors.dark, marginTop: 4 }}>{s.value}</Text>
+                <View key={s.label} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 16, backgroundColor: colors.white, minWidth: 120 }}>
+                  <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 10, color: colors.warm, textTransform: "uppercase", letterSpacing: 0.5 }}>{s.label}</Text>
+                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 30, color: colors.dark, marginTop: 6 }}>{s.value}</Text>
                 </View>
               ))}
             </ScrollView>
@@ -331,7 +403,7 @@ function AdminAccount() {
                       </View>
                       <View style={{ flex: 1 }}>
                         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                          <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 18, color: colors.dark }}>{u.name || "Unnamed"}</Text>
+                          <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 16, color: colors.dark }}>{u.name || "Unnamed"}</Text>
                           <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
                             <Text style={{ fontFamily: "Inter_500Medium", fontSize: 11, color: colors.warm, textTransform: "uppercase" }}>{u.role}</Text>
                           </View>
@@ -381,26 +453,30 @@ function AdminAccount() {
 
         {activeTab === "Security" && (
           <>
-            <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: colors.dark, marginBottom: 16 }}>Security</Text>
-            {[
-              { label: "Password", desc: "Last changed 3 months ago", action: "Change →" },
-              { label: "Two-factor auth", desc: "Authenticator app enabled", toggle: true },
-              { label: "Active sessions", desc: "2 devices logged in", action: "Manage →" },
-              { label: "Last login", desc: "Today 09:42 · London, UK" },
-            ].map((item) => (
-              <View key={item.label} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 14, backgroundColor: colors.white, marginBottom: 8 }}>
-                <View><Text style={{ fontFamily: "Inter_500Medium", fontSize: 14, color: colors.dark }}>{item.label}</Text><Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm }}>{item.desc}</Text></View>
-                {item.toggle ? <Switch value={true} trackColor={{ false: colors.border, true: colors.dark }} thumbColor={colors.white} /> : item.action ? <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: colors.dark }}>{item.action}</Text> : null}
-              </View>
-            ))}
+            <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 22, color: colors.dark, marginBottom: 16 }}>Security</Text>
+            <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, backgroundColor: colors.white, overflow: "hidden", marginBottom: 24 }}>
+              {[
+                { label: "Password", desc: "Last changed 3 months ago", action: "Change →" },
+                { label: "Two-factor auth", desc: "Authenticator app enabled", toggle: true },
+                { label: "Active sessions", desc: "2 devices logged in", action: "Manage →" },
+                { label: "Last login", desc: "Today 09:42 · London, UK" },
+              ].map((item, i, arr) => (
+                <View key={item.label} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: i < arr.length - 1 ? 1 : 0, borderBottomColor: colors.border }}>
+                  <View style={{ flex: 1 }}><Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: colors.dark }}>{item.label}</Text><Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm, marginTop: 2 }}>{item.desc}</Text></View>
+                  {item.toggle ? <Switch value={true} trackColor={{ false: colors.border, true: colors.dark }} thumbColor={colors.white} /> : item.action ? <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: colors.dark }}>{item.action}</Text> : null}
+                </View>
+              ))}
+            </View>
 
-            <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: colors.dark, marginTop: 16, marginBottom: 12 }}>Notifications</Text>
-            {["New user registrations", "Flagged accounts", "Failed payments", "Stale listing alerts", "System errors"].map((label) => (
-              <View key={label} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.dark }}>{label}</Text>
-                <Switch value={true} trackColor={{ false: colors.border, true: colors.dark }} thumbColor={colors.white} />
-              </View>
-            ))}
+            <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 22, color: colors.dark, marginBottom: 16 }}>Notifications</Text>
+            <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, backgroundColor: colors.white, overflow: "hidden" }}>
+              {["New user registrations", "Flagged accounts", "Failed payments", "Stale listing alerts", "System errors"].map((label, i, arr) => (
+                <View key={label} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: i < arr.length - 1 ? 1 : 0, borderBottomColor: colors.border }}>
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.dark }}>{label}</Text>
+                  <Switch value={true} trackColor={{ false: colors.border, true: colors.dark }} thumbColor={colors.white} />
+                </View>
+              ))}
+            </View>
           </>
         )}
 
@@ -433,10 +509,7 @@ function AdminAccount() {
         )}
 
         {activeTab === "Articles" && (
-          <>
-            <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: colors.dark, marginBottom: 12 }}>Articles</Text>
-            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.warm }}>Article management available in web dashboard. You can view articles in the Articles tab of the main app.</Text>
-          </>
+          <AdminArticlesTab />
         )}
       </View>
     </ScrollView>

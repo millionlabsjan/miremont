@@ -1,35 +1,64 @@
 import { View, Text, ScrollView, TouchableOpacity, Image, TextInput } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
+import { Feather } from "@expo/vector-icons";
 import { apiRequest } from "../../lib/api";
 import { colors } from "../../constants/theme";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function ArticlesListScreen() {
-  const [category, setCategory] = useState("Featured");
-  const categories = ["Featured", "Investment", "Design"];
+  const [category, setCategory] = useState("All");
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const { data: categories } = useQuery({
+    queryKey: ["article-categories"],
+    queryFn: () => apiRequest("/api/articles/categories") as Promise<string[]>,
+  });
+
+  const params = new URLSearchParams();
+  if (category !== "All") params.set("category", category);
+  if (debouncedSearch) params.set("q", debouncedSearch);
+  const qs = params.toString();
 
   const { data } = useQuery({
-    queryKey: ["articles"],
-    queryFn: () => apiRequest("/api/articles"),
+    queryKey: ["articles", category, debouncedSearch],
+    queryFn: () => apiRequest(`/api/articles${qs ? `?${qs}` : ""}`),
   });
 
   const articles = data?.articles || [];
+  const allCategories = ["All", ...(categories || [])];
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.offwhite }}>
       <View style={{ paddingTop: 56, paddingHorizontal: 20 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 }}>
           <TouchableOpacity onPress={() => router.back()}>
-            <Text style={{ fontSize: 20, color: colors.dark }}>←</Text>
+            <Feather name="arrow-left" size={20} color={colors.dark} />
           </TouchableOpacity>
           <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 22, color: colors.dark }}>Articles</Text>
         </View>
 
-        <TextInput placeholder="Search articles" placeholderTextColor={colors.warm} style={{ height: 44, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 40, fontFamily: "Inter_400Regular", fontSize: 14, color: colors.dark, marginBottom: 12 }} />
+        <View style={{ position: "relative", marginBottom: 12 }}>
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search articles"
+            placeholderTextColor={colors.warm}
+            style={{ height: 44, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingLeft: 40, paddingRight: 16, fontFamily: "Inter_400Regular", fontSize: 14, color: colors.dark }}
+          />
+          <View style={{ position: "absolute", left: 12, top: 14 }}>
+            <Feather name="search" size={16} color={colors.warm} />
+          </View>
+        </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }} contentContainerStyle={{ gap: 8 }}>
-          {categories.map((cat) => (
+          {allCategories.map((cat) => (
             <TouchableOpacity key={cat} onPress={() => setCategory(cat)} style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: category === cat ? colors.dark : colors.offwhite, borderWidth: 1, borderColor: category === cat ? colors.dark : colors.border }}>
               <Text style={{ fontFamily: "Inter_500Medium", fontSize: 12, color: category === cat ? colors.offwhite : colors.warm }}>{cat}</Text>
             </TouchableOpacity>

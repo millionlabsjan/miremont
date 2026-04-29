@@ -1,11 +1,20 @@
 import { Router } from "express";
 import { db } from "../db/index";
 import { articles, articleContents, users } from "../db/schema";
-import { eq, desc, count, and, max } from "drizzle-orm";
+import { eq, desc, count, and, max, ilike, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { z } from "zod";
 
 export const articlesRouter = Router();
+
+// Public: list distinct categories
+articlesRouter.get("/categories", async (_req, res) => {
+  const rows = await db
+    .selectDistinct({ category: articles.category })
+    .from(articles)
+    .where(eq(articles.status, "published"));
+  res.json(rows.map((r) => r.category).filter(Boolean));
+});
 
 // Public: list published articles
 articlesRouter.get("/", async (req, res) => {
@@ -13,13 +22,29 @@ articlesRouter.get("/", async (req, res) => {
   const limit = parseInt(req.query.limit as string) || 20;
   const offset = (page - 1) * limit;
   const status = (req.query.status as string) || undefined;
+  const category = (req.query.category as string) || undefined;
+  const q = (req.query.q as string) || undefined;
   const isAdmin = req.session.role === "admin";
 
-  const where = isAdmin && status
-    ? eq(articles.status, status as any)
-    : isAdmin
-    ? undefined
-    : eq(articles.status, "published");
+  const conditions: any[] = [];
+
+  if (isAdmin && status) {
+    conditions.push(eq(articles.status, status as any));
+  } else if (!isAdmin) {
+    conditions.push(eq(articles.status, "published"));
+  }
+
+  if (category) {
+    conditions.push(eq(articles.category, category));
+  }
+
+  if (q) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM ${articleContents} WHERE ${articleContents.id} = ${articles.currentContentId} AND ${articleContents.titleEn} ILIKE ${"%" + q + "%"})`
+    );
+  }
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
 
   const [articleList, [{ total }]] = await Promise.all([
     db
@@ -151,6 +176,7 @@ articlesRouter.put("/:id", requireRole("admin"), async (req, res) => {
     category: z.string().optional(),
     thumbnailUrl: z.string().optional(),
     status: z.enum(["draft", "published", "archived"]).optional(),
+    authorId: z.string().uuid().optional(),
   });
 
   try {
