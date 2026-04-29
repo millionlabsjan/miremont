@@ -148,7 +148,11 @@ propertiesRouter.get("/", async (req, res) => {
 });
 
 // Get single property
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 propertiesRouter.get("/:id", async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) {
+    return res.status(404).json({ message: "Property not found" });
+  }
   const [property] = await db
     .select()
     .from(properties)
