@@ -52,6 +52,7 @@ export const users = pgTable(
     avatarUrl: text("avatar_url"),
     role: roleEnum("role").notNull().default("buyer"),
     agencyName: varchar("agency_name", { length: 255 }),
+    phone: varchar("phone", { length: 30 }),
     contactInfo: text("contact_info"),
     googleId: varchar("google_id", { length: 255 }).unique(),
     status: userStatusEnum("status").notNull().default("active"),
@@ -62,11 +63,10 @@ export const users = pgTable(
       "USD"
     ),
     notificationPrefs: jsonb("notification_prefs").$type<{
-      newRegistrations?: boolean;
-      flaggedAccounts?: boolean;
-      failedPayments?: boolean;
-      staleListings?: boolean;
-      systemErrors?: boolean;
+      savedSearches?: boolean;
+      inquiryReplies?: boolean;
+      propertyUpdates?: boolean;
+      newsletter?: boolean;
     }>(),
     stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
     passwordResetToken: varchar("password_reset_token", { length: 255 }),

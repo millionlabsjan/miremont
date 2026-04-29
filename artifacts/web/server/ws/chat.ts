@@ -1,7 +1,8 @@
 import { WebSocketServer, WebSocket } from "ws";
-import { db } from "../db/index";
-import { messages, messageReads, inquiries } from "../db/schema";
+import { db, notify } from "../db/index";
+import { messages, messageReads, inquiries, users, properties } from "../db/schema";
 import { eq, and, or, ne } from "drizzle-orm";
+import { sendInquiryReplyEmail } from "../email";
 import type { IncomingMessage } from "http";
 
 interface AuthenticatedWS extends WebSocket {
@@ -101,6 +102,17 @@ export function setupWebSocket(wss: WebSocketServer) {
                   }
                 }
               }
+
+              // DB notification + email
+              const [sender] = await db.select({ name: users.name }).from(users).where(eq(users.id, ws.userId!)).limit(1);
+              const [recipient] = await db.select({ email: users.email }).from(users).where(eq(users.id, recipientId)).limit(1);
+              const [property] = await db.select({ title: properties.title }).from(properties).where(eq(properties.id, inq.propertyId)).limit(1);
+              const senderName = sender?.name || "someone";
+              const preview = msg.content?.slice(0, 100) || "";
+
+              notify(recipientId, "new_message", `New message from ${senderName}`, preview, `/inquiries/${inq.id}`, {
+                sendEmail: recipient ? () => sendInquiryReplyEmail(recipient.email, senderName, property?.title || "a property", preview, inq.id) : undefined,
+              });
             }
             break;
           }

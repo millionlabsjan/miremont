@@ -2,7 +2,10 @@ import { View, Text, ScrollView, TouchableOpacity, Image, Dimensions } from "rea
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { apiRequest } from "../../lib/api";
+import { useAuthStore } from "../../lib/auth";
 import { colors } from "../../constants/theme";
+import { formatPrice } from "../../lib/formatPrice";
+import { useRates } from "../../lib/useRates";
 
 function timeAgo(date: string) {
   const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
@@ -19,6 +22,8 @@ const { width } = Dimensions.get("window");
 const cardWidth = (width - 52) / 2;
 
 export default function ActivityScreen() {
+  const userCurrency = useAuthStore((s) => s.user?.preferredCurrency);
+  const rates = useRates();
   const { data: favData } = useQuery({
     queryKey: ["favorites"],
     queryFn: () => apiRequest("/api/properties/user/favorites"),
@@ -87,7 +92,7 @@ export default function ActivityScreen() {
               <View style={{ padding: 10 }}>
                 <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: colors.dark }} numberOfLines={1}>{prop.title}</Text>
                 <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: colors.warm }}>📍 {prop.city}, {prop.country}</Text>
-                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: colors.dark, marginTop: 4 }}>£ {Number(prop.price).toLocaleString()}</Text>
+                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 15, color: colors.dark, marginTop: 4 }}>{formatPrice(prop.price, prop.currency, userCurrency, rates)}</Text>
               </View>
             </TouchableOpacity>
           ))}

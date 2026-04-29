@@ -8,6 +8,8 @@ import MapView, { Marker, type Region } from "react-native-maps";
 import { apiRequest } from "../../lib/api";
 import { colors } from "../../constants/theme";
 import { useAuthStore } from "../../lib/auth";
+import { formatPrice, formatPriceCompact } from "../../lib/formatPrice";
+import { useRates } from "../../lib/useRates";
 
 const { width } = Dimensions.get("window");
 const ARROW_WIDTH = 28;
@@ -16,6 +18,8 @@ const CARD_LIST_WIDTH = width - (ARROW_WIDTH + SHEET_PADDING) * 2;
 const CATEGORIES = ["All", "Villa", "Penthouse", "Estate", "Apartment", "Beachfront"];
 
 export default function ExploreScreen() {
+  const userCurrency = useAuthStore((s) => s.user?.preferredCurrency);
+  const rates = useRates();
   const [search, setSearch] = useState("");
   const [showMap, setShowMap] = useState(false);
   const [activeCategory, setActiveCategory] = useState("All");
@@ -110,7 +114,7 @@ export default function ExploreScreen() {
               <Marker key={prop.id} coordinate={{ latitude: lat, longitude: lng }} onPress={() => onMarkerPress(prop.id)}>
                 <View style={{ backgroundColor: isActive ? "#c9a96e" : colors.dark, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }}>
                   <Text style={{ fontFamily: "Inter_700Bold", fontSize: 11, color: colors.offwhite }}>
-                    £{(Number(prop.price) / 1_000_000).toFixed(1)}M
+                    {formatPriceCompact(prop.price, prop.currency, userCurrency, rates)}
                   </Text>
                 </View>
               </Marker>
@@ -205,7 +209,7 @@ export default function ExploreScreen() {
                         <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm }}>{prop.city}, {prop.country}</Text>
                       </View>
                       <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 18, color: colors.dark, marginTop: 6 }}>
-                        £{Number(prop.price).toLocaleString()}
+                        {formatPrice(prop.price, prop.currency, userCurrency, rates)}
                       </Text>
                       <View style={{ flexDirection: "row", gap: 12, marginTop: 6, alignItems: "center" }}>
                         {prop.bedrooms != null && (
@@ -320,7 +324,7 @@ export default function ExploreScreen() {
                 </View>
               </View>
               <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 22, color: colors.dark, marginTop: 8 }}>
-                £ {Number(prop.price).toLocaleString()}
+                {formatPrice(prop.price, prop.currency, userCurrency, rates)}
               </Text>
               <View style={{ flexDirection: "row", gap: 16, marginTop: 8, alignItems: "center" }}>
                 {prop.bedrooms != null && (

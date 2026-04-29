@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Plus, AlertTriangle, ArrowRight } from "lucide-react";
 import { apiRequest } from "../../lib/queryClient";
 import { clsx } from "clsx";
+import { formatPrice } from "../../lib/formatPrice";
 
 export default function MyListingsPage() {
   const queryClient = useQueryClient();
@@ -102,7 +103,7 @@ export default function MyListingsPage() {
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-sm truncate">{prop.title}</p>
               <p className="text-xs text-brand-warm">{prop.city}, {prop.country}</p>
-              <p className="font-serif font-bold mt-1">£{Number(prop.price).toLocaleString()}</p>
+              <p className="font-serif font-bold mt-1">{formatPrice(prop.price, prop.currency)}</p>
             </div>
             <div className="text-right shrink-0">
               <span className={clsx(

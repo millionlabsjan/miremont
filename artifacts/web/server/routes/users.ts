@@ -6,6 +6,33 @@ import { eq, ilike, and, or, sql, desc, count, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { z } from "zod";
 import argon2 from "argon2";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+import crypto from "crypto";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const uploadsDir = path.resolve(__dirname, "../../uploads/avatars");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadsDir),
+  filename: (_req, _file, cb) => {
+    const ext = path.extname(_file.originalname) || ".jpg";
+    cb(null, `${crypto.randomUUID()}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    cb(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype));
+  },
+});
 
 export const usersRouter = Router();
 
@@ -27,6 +54,7 @@ usersRouter.put("/profile", requireAuth, async (req, res) => {
     name: z.string().min(1).optional(),
     email: z.string().email().optional(),
     agencyName: z.string().optional(),
+    phone: z.string().optional(),
     contactInfo: z.string().optional(),
     preferredLanguage: z.string().optional(),
     preferredCurrency: z.string().optional(),
@@ -47,6 +75,61 @@ usersRouter.put("/profile", requireAuth, async (req, res) => {
       return res.status(400).json({ message: err.errors[0].message });
     res.status(500).json({ message: "Internal server error" });
   }
+});
+
+// Upload avatar
+usersRouter.post("/profile/avatar", requireAuth, upload.single("avatar"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: "No file uploaded or invalid type" });
+  }
+
+  const [currentUser] = await db
+    .select({ avatarUrl: users.avatarUrl })
+    .from(users)
+    .where(eq(users.id, req.session.userId!))
+    .limit(1);
+
+  if (currentUser?.avatarUrl?.includes("/uploads/avatars/")) {
+    const oldFilename = currentUser.avatarUrl.split("/uploads/avatars/").pop();
+    if (oldFilename) {
+      fs.unlink(path.join(uploadsDir, oldFilename), () => {});
+    }
+  }
+
+  const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+  const [updated] = await db
+    .update(users)
+    .set({ avatarUrl, updatedAt: new Date() })
+    .where(eq(users.id, req.session.userId!))
+    .returning();
+
+  const { passwordHash, ...profile } = updated;
+  res.json(profile);
+});
+
+// Remove avatar
+usersRouter.delete("/profile/avatar", requireAuth, async (req, res) => {
+  const [currentUser] = await db
+    .select({ avatarUrl: users.avatarUrl })
+    .from(users)
+    .where(eq(users.id, req.session.userId!))
+    .limit(1);
+
+  if (currentUser?.avatarUrl?.includes("/uploads/avatars/")) {
+    const filename = currentUser.avatarUrl.split("/uploads/avatars/").pop();
+    if (filename) {
+      fs.unlink(path.join(uploadsDir, filename), () => {});
+    }
+  }
+
+  const [updated] = await db
+    .update(users)
+    .set({ avatarUrl: null, updatedAt: new Date() })
+    .where(eq(users.id, req.session.userId!))
+    .returning();
+
+  const { passwordHash, ...profile } = updated;
+  res.json(profile);
 });
 
 // Change password

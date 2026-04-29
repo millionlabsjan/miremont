@@ -4,11 +4,17 @@ import { ArrowLeft, Share2, Heart, MapPin, Bed, Bath, Maximize, Calendar } from 
 import { useState } from "react";
 import { apiRequest } from "../lib/queryClient";
 import { APIProvider, Map, AdvancedMarker } from "@vis.gl/react-google-maps";
+import { useAuth } from "../hooks/useAuth";
+import { useRates } from "../hooks/useRates";
+import { formatPrice, formatPriceCompact } from "../lib/formatPrice";
 
 const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || "";
 
 export default function PropertyDetailPage() {
   const { id } = useParams();
+  const { user } = useAuth();
+  const rates = useRates();
+  const userCurrency = user?.preferredCurrency;
   const [activeTab, setActiveTab] = useState("description");
   const [activeImage, setActiveImage] = useState(0);
 
@@ -165,8 +171,7 @@ export default function PropertyDetailPage() {
                         }}
                       >
                         <div className="bg-brand-dark text-brand-offwhite text-xs font-bold px-2 py-1 rounded-md shadow-lg">
-                          {property.currency === "GBP" ? "\u00A3" : "$"}{" "}
-                          {Number(property.price).toLocaleString()}
+                          {formatPriceCompact(property.price, property.currency, userCurrency, rates)}
                         </div>
                       </AdvancedMarker>
                     </Map>
@@ -193,8 +198,7 @@ export default function PropertyDetailPage() {
             </p>
 
             <p className="font-serif text-3xl font-bold text-brand-dark mb-2">
-              {property.currency === "GBP" ? "\u00A3" : "$"}{" "}
-              {Number(property.price).toLocaleString()}
+              {formatPrice(property.price, property.currency, userCurrency, rates)}
             </p>
 
             {/* Property specs */}

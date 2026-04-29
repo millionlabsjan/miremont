@@ -4,6 +4,7 @@ import { inquiries, messages, messageReads, properties, users } from "../db/sche
 import { eq, and, or, desc, count, notExists, ne, sql } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { z } from "zod";
+import { sendInquiryReplyEmail } from "../email";
 
 export const inquiriesRouter = Router();
 
@@ -269,7 +270,15 @@ inquiriesRouter.post("/:id/messages", requireAuth, async (req, res) => {
     // Notify the other party
     const recipientId = inquiry.buyerId === req.session.userId ? inquiry.agentId : inquiry.buyerId;
     const [sender] = await db.select({ name: users.name }).from(users).where(eq(users.id, req.session.userId!)).limit(1);
-    await notify(recipientId, "new_message", `New message from ${sender?.name || "someone"}`, data.content.slice(0, 100), `/inquiries/${inquiry.id}`);
+    const [recipient] = await db.select({ email: users.email }).from(users).where(eq(users.id, recipientId)).limit(1);
+    const [property] = await db.select({ title: properties.title }).from(properties).where(eq(properties.id, inquiry.propertyId)).limit(1);
+    const senderName = sender?.name || "someone";
+    const propertyTitle = property?.title || "a property";
+    const preview = data.content.slice(0, 100);
+
+    await notify(recipientId, "new_message", `New message from ${senderName}`, preview, `/inquiries/${inquiry.id}`, {
+      sendEmail: recipient ? () => sendInquiryReplyEmail(recipient.email, senderName, propertyTitle, preview, inquiry.id) : undefined,
+    });
 
     res.status(201).json(message);
   } catch (err) {

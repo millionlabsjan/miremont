@@ -16,6 +16,7 @@ import { categoriesRouter } from "./routes/categories";
 import { searchesRouter } from "./routes/searches";
 import { notificationsRouter } from "./routes/notifications";
 import { setupWebSocket } from "./ws/chat";
+import { initRates } from "./services/exchangeRates";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,6 +40,10 @@ app.use(
 );
 
 app.use(express.json());
+
+// Serve uploaded files (avatars, etc.)
+const uploadsPath = path.resolve(__dirname, "../uploads");
+app.use("/uploads", express.static(uploadsPath));
 
 // Mobile auth: copy x-session-cookie header into Cookie header
 // React Native's fetch strips Cookie headers, so mobile sends via x-session-cookie instead
@@ -80,6 +85,8 @@ app.use("/api/notifications", notificationsRouter);
 const wss = new WebSocketServer({ server, path: "/ws" });
 setupWebSocket(wss);
 
+const PORT = parseInt(process.env.PORT || "3000");
+
 // Serve frontend
 if (process.env.NODE_ENV === "production") {
   const publicDir = path.resolve(__dirname, "../dist/public");
@@ -94,6 +101,7 @@ if (process.env.NODE_ENV === "production") {
     server: {
       middlewareMode: true,
       allowedHosts: true,
+      hmr: { port: PORT + 1 },
     },
     root: path.resolve(__dirname, "../client"),
     appType: "spa",
@@ -101,7 +109,9 @@ if (process.env.NODE_ENV === "production") {
   app.use(vite.middlewares);
 }
 
-const PORT = parseInt(process.env.PORT || "3000");
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+// Load exchange rates, then start server
+initRates().finally(() => {
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
 });

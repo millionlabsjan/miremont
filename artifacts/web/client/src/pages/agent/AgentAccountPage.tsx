@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { clsx } from "clsx";
+import { formatPrice } from "../../lib/formatPrice";
 
 export default function AgentAccountPage() {
   const { user } = useAuth();
@@ -87,7 +88,7 @@ export default function AgentAccountPage() {
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-sm truncate">{prop.title}</p>
                   <p className="text-xs text-brand-warm">{prop.city}, {prop.country}</p>
-                  <p className="font-bold text-sm mt-1">£{Number(prop.price).toLocaleString()}</p>
+                  <p className="font-bold text-sm mt-1">{formatPrice(prop.price, prop.currency)}</p>
                 </div>
                 <div className="text-right shrink-0">
                   <span className={clsx(
