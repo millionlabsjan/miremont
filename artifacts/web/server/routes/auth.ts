@@ -250,8 +250,10 @@ authRouter.get("/me", async (req, res) => {
       role: users.role,
       avatarUrl: users.avatarUrl,
       agencyName: users.agencyName,
+      phone: users.phone,
       preferredLanguage: users.preferredLanguage,
       preferredCurrency: users.preferredCurrency,
+      notificationPrefs: users.notificationPrefs,
       status: users.status,
       createdAt: users.createdAt,
     })

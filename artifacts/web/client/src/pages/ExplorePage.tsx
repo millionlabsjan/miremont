@@ -4,6 +4,9 @@ import { Search, Heart, ChevronRight, Bed, Bath, Maximize, SlidersHorizontal } f
 import { Link } from "react-router-dom";
 import { apiRequest } from "../lib/queryClient";
 import { APIProvider, Map, AdvancedMarker, Pin, InfoWindow } from "@vis.gl/react-google-maps";
+import { useAuth } from "../hooks/useAuth";
+import { useRates } from "../hooks/useRates";
+import { formatPrice, formatPriceCompact } from "../lib/formatPrice";
 
 const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || "";
 
@@ -116,8 +119,7 @@ function PropertyCard({
 
           <div className="flex items-center justify-between mt-2">
             <p className="font-serif text-lg font-bold text-brand-dark">
-              {property.currency === "GBP" ? "\u00A3" : "$"}{" "}
-              {Number(property.price).toLocaleString()}
+              {formatPrice(property.price, property.currency, userCurrency, rates)}
             </p>
           </div>
         </div>
@@ -140,6 +142,9 @@ function PropertyCard({
 }
 
 export default function ExplorePage() {
+  const { user } = useAuth();
+  const rates = useRates();
+  const userCurrency = user?.preferredCurrency;
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [selectedPin, setSelectedPin] = useState<Property | null>(null);
@@ -233,10 +238,7 @@ export default function ExplorePage() {
               const lng = parseFloat(prop.longitude);
               if (isNaN(lat) || isNaN(lng)) return null;
 
-              const priceLabel =
-                Number(prop.price) >= 1_000_000
-                  ? `${prop.currency === "GBP" ? "\u00A3" : "$"} ${(Number(prop.price) / 1_000_000).toFixed(1)}M`
-                  : `${prop.currency === "GBP" ? "\u00A3" : "$"} ${(Number(prop.price) / 1_000).toFixed(0)}K`;
+              const priceLabel = formatPriceCompact(prop.price, prop.currency, userCurrency, rates);
 
               return (
                 <AdvancedMarker
@@ -272,8 +274,7 @@ export default function ExplorePage() {
                     {selectedPin.city}, {selectedPin.country}
                   </p>
                   <p className="font-bold text-sm mt-1">
-                    {selectedPin.currency === "GBP" ? "\u00A3" : "$"}{" "}
-                    {Number(selectedPin.price).toLocaleString()}
+                    {formatPrice(selectedPin.price, selectedPin.currency, userCurrency, rates)}
                   </p>
                   <Link
                     to={`/properties/${selectedPin.id}`}

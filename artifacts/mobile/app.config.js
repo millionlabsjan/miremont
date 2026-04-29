@@ -55,6 +55,16 @@ module.exports = ({ config }) => ({
     web: {
       favicon: "./assets/favicon.png",
     },
-    plugins: ["expo-router", "expo-secure-store", "expo-font"],
+    plugins: [
+      "expo-router",
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          photosPermission: "Allow The Property Catalogue to access your photos to set your profile picture.",
+        },
+      ],
+    ],
   },
 });

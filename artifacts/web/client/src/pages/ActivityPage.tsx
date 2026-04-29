@@ -2,8 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Heart, Search, ArrowRight, Grid3X3, List } from "lucide-react";
 import { useState } from "react";
+import { useAuth } from "../hooks/useAuth";
+import { useRates } from "../hooks/useRates";
+import { formatPrice } from "../lib/formatPrice";
 
 export default function ActivityPage() {
+  const { user } = useAuth();
+  const rates = useRates();
+  const userCurrency = user?.preferredCurrency;
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   const { data: favData } = useQuery({
@@ -73,7 +79,7 @@ export default function ActivityPage() {
             <div className="p-3">
               <p className="font-semibold text-sm truncate">{prop.title}</p>
               <p className="text-xs text-brand-warm">{prop.city}, {prop.country}</p>
-              <p className="font-serif text-lg font-bold mt-1">£ {Number(prop.price).toLocaleString()}</p>
+              <p className="font-serif text-lg font-bold mt-1">{formatPrice(prop.price, prop.currency, userCurrency, rates)}</p>
               <div className="flex gap-3 text-xs text-brand-warm mt-1">
                 {prop.bedrooms && <span>🛏 {prop.bedrooms}</span>}
                 {prop.bathrooms && <span>🚿 {prop.bathrooms}</span>}

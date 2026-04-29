@@ -5,12 +5,17 @@ import { useLocalSearchParams, router } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import MapView, { Marker } from "react-native-maps";
 import { apiRequest } from "../../lib/api";
+import { useAuthStore } from "../../lib/auth";
 import { colors } from "../../constants/theme";
+import { formatPrice, formatPriceCompact } from "../../lib/formatPrice";
+import { useRates } from "../../lib/useRates";
 
 const { width } = Dimensions.get("window");
 
 export default function PropertyDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const userCurrency = useAuthStore((s) => s.user?.preferredCurrency);
+  const rates = useRates();
   const [activeTab, setActiveTab] = useState("description");
   const [activeImage, setActiveImage] = useState(0);
   const queryClient = useQueryClient();
@@ -87,17 +92,15 @@ export default function PropertyDetailScreen() {
 
           {/* Price */}
           <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 32, color: colors.dark, marginTop: 16 }}>
-            £ {Number(property.price).toLocaleString()}
+            {formatPrice(property.price, property.currency, userCurrency, rates)}
           </Text>
 
-          {/* Currency converter */}
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8 }}>
-            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.warm }}>Show in:</Text>
-            <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 6 }}>
-              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: colors.warm }}>▾</Text>
-            </View>
-            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.warm }}>£ {Number(property.price).toLocaleString()}</Text>
-          </View>
+          {/* Original price if converted */}
+          {rates && userCurrency && userCurrency !== (property.currency || "EUR") && (
+            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.warm, marginTop: 4 }}>
+              Listed at {formatPrice(property.price, property.currency, property.currency, null)}
+            </Text>
+          )}
 
           {/* Listed by */}
           <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: colors.warm, marginTop: 8 }}>
@@ -164,7 +167,7 @@ export default function PropertyDetailScreen() {
                 >
                   <Marker coordinate={{ latitude: parseFloat(property.latitude), longitude: parseFloat(property.longitude) }}>
                     <View style={{ backgroundColor: colors.dark, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }}>
-                      <Text style={{ fontFamily: "Inter_700Bold", fontSize: 11, color: colors.offwhite }}>£{(Number(property.price) / 1_000_000).toFixed(1)}M</Text>
+                      <Text style={{ fontFamily: "Inter_700Bold", fontSize: 11, color: colors.offwhite }}>{formatPriceCompact(property.price, property.currency, userCurrency, rates)}</Text>
                     </View>
                   </Marker>
                 </MapView>

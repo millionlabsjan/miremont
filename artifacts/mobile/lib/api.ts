@@ -31,3 +31,30 @@ export async function apiRequest(
   const text = await res.text();
   return text ? JSON.parse(text) : null;
 }
+
+export async function apiUpload(
+  path: string,
+  formData: FormData,
+  method: string = "POST"
+): Promise<any> {
+  const { sessionCookie } = useAuthStore.getState();
+
+  const headers: Record<string, string> = {};
+  if (sessionCookie) {
+    headers["x-session-cookie"] = sessionCookie;
+  }
+
+  const res = await fetch(`${API_URL}${path}`, {
+    method,
+    headers,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ message: res.statusText }));
+    throw new Error(body.message || res.statusText);
+  }
+
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}

@@ -2,9 +2,10 @@ import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, Alert, Image } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { useAuthStore } from "../../lib/auth";
-import { apiRequest } from "../../lib/api";
-import { colors } from "../../constants/theme";
+import { apiRequest, apiUpload } from "../../lib/api";
+import { colors, API_URL } from "../../constants/theme";
 import { router } from "expo-router";
 
 export default function AccountScreen() {
@@ -15,42 +16,216 @@ export default function AccountScreen() {
   return <BuyerAccount />;
 }
 
+const CURRENCIES = [
+  { code: "EUR", label: "EUR — Euro" },
+  { code: "USD", label: "USD — US Dollar" },
+  { code: "GBP", label: "GBP — British Pound" },
+];
+
+const LANGUAGES = [
+  { code: "en", label: "English" },
+  { code: "de", label: "German" },
+  { code: "fr", label: "French" },
+  { code: "es", label: "Spanish" },
+  { code: "it", label: "Italian" },
+  { code: "pt", label: "Portuguese" },
+];
+
 function BuyerAccount() {
   const { user, logout } = useAuthStore();
   const [name, setName] = useState(user?.name || "");
   const [email, setEmail] = useState(user?.email || "");
+  const [phone, setPhone] = useState(user?.phone || "");
+  const [preferredLanguage, setPreferredLanguage] = useState(user?.preferredLanguage || "en");
+  const [preferredCurrency, setPreferredCurrency] = useState(user?.preferredCurrency || "USD");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [notifs, setNotifs] = useState({ savedSearches: true, inquiryReplies: true, propertyUpdates: true, newsletter: false });
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showLangPicker, setShowLangPicker] = useState(false);
+  const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const defaultNotifs = { savedSearches: true, inquiryReplies: true, propertyUpdates: true, newsletter: false };
+  const [notifs, setNotifs] = useState({ ...defaultNotifs, ...user?.notificationPrefs });
   const initials = user?.name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) || "?";
 
-  const saveProfile = async () => {
-    setSaving(true);
-    try { await apiRequest("/api/users/profile", { method: "PUT", body: JSON.stringify({ name, email }) }); Alert.alert("Success", "Profile updated"); } catch (err: any) { Alert.alert("Error", err.message); }
-    setSaving(false);
+  const memberSince = user?.createdAt
+    ? new Date(user.createdAt).toLocaleDateString("en-US", { month: "short", year: "numeric" })
+    : "";
+
+  const autoSave = async (updates: Record<string, any>) => {
+    try {
+      const updated = await apiRequest("/api/users/profile", {
+        method: "PUT",
+        body: JSON.stringify(updates),
+      });
+      useAuthStore.getState().setUser(updated);
+    } catch {}
+  };
+
+  const changePassword = async () => {
+    if (newPassword !== confirmPassword) {
+      Alert.alert("Error", "New passwords do not match");
+      return;
+    }
+    if (!currentPassword || !newPassword) {
+      Alert.alert("Error", "Please fill in all password fields");
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      await apiRequest("/api/users/password", {
+        method: "PUT",
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      Alert.alert("Success", "Password updated");
+    } catch (err: any) {
+      Alert.alert("Error", err.message);
+    }
+    setChangingPassword(false);
+  };
+
+  const pickAndUploadAvatar = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      const uri = asset.uri;
+      const filename = uri.split("/").pop() || "avatar.jpg";
+      const match = /\.(\w+)$/.exec(filename);
+      const mimeType = match ? `image/${match[1]}` : "image/jpeg";
+
+      const formData = new FormData();
+      formData.append("avatar", { uri, name: filename, type: mimeType } as any);
+
+      const updated = await apiUpload("/api/users/profile/avatar", formData);
+      useAuthStore.getState().setUser(updated);
+    } catch (err: any) {
+      Alert.alert("Upload failed", err.message);
+    }
+  };
+
+  const removeAvatar = async () => {
+    try {
+      const updated = await apiRequest("/api/users/profile/avatar", { method: "DELETE" });
+      useAuthStore.getState().setUser(updated);
+    } catch (err: any) {
+      Alert.alert("Error", err.message);
+    }
   };
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.offwhite }} contentContainerStyle={{ paddingBottom: 40 }}>
       <View style={{ paddingTop: 56, paddingHorizontal: 20 }}>
-        <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 26, color: colors.dark, textAlign: "center", marginBottom: 4 }}>Account</Text>
-        <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.warm, textAlign: "center", marginBottom: 24 }}>Manage your profile and preferences</Text>
+        {/* Header */}
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 4, position: "relative" }}>
+          <TouchableOpacity onPress={() => router.back()} style={{ position: "absolute", left: 0, padding: 4 }}>
+            <Feather name="chevron-left" size={24} color={colors.dark} />
+          </TouchableOpacity>
+          <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 26, color: colors.dark, textAlign: "center" }}>Account</Text>
+        </View>
+
+        <View style={{ height: 1, backgroundColor: colors.border, marginTop: 12, marginBottom: 16 }} />
+        <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.warm, marginBottom: 24 }}>Manage your profile and preferences</Text>
 
         <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: colors.dark, marginBottom: 16 }}>Personal information</Text>
+
+        {/* Avatar with camera overlay */}
         <View style={{ alignItems: "center", marginBottom: 24 }}>
-          <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: colors.input, justifyContent: "center", alignItems: "center", marginBottom: 8 }}>
-            <Text style={{ fontFamily: "Inter_700Bold", fontSize: 28, color: colors.dark }}>{initials}</Text>
-          </View>
-          <TouchableOpacity><Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: colors.dark }}>Change photo</Text></TouchableOpacity>
+          <TouchableOpacity onPress={pickAndUploadAvatar} activeOpacity={0.7} style={{ position: "relative", marginBottom: 8 }}>
+            {user?.avatarUrl ? (
+              <Image source={{ uri: user.avatarUrl?.startsWith("http") ? user.avatarUrl : `${API_URL}${user.avatarUrl}` }} style={{ width: 100, height: 100, borderRadius: 50 }} />
+            ) : (
+              <View style={{ width: 100, height: 100, borderRadius: 50, backgroundColor: colors.input, justifyContent: "center", alignItems: "center" }}>
+                <Text style={{ fontFamily: "Inter_700Bold", fontSize: 32, color: colors.dark }}>{initials}</Text>
+              </View>
+            )}
+            <View style={{ position: "absolute", bottom: 0, right: 0, width: 30, height: 30, borderRadius: 15, backgroundColor: colors.dark, justifyContent: "center", alignItems: "center" }}>
+              <Feather name="camera" size={14} color={colors.offwhite} />
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={pickAndUploadAvatar}><Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: colors.dark }}>Change photo</Text></TouchableOpacity>
+          <TouchableOpacity onPress={removeAvatar}><Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: colors.warm, marginTop: 2 }}>Remove</Text></TouchableOpacity>
         </View>
 
         <Label text="Full name" />
-        <Input value={name} onChangeText={setName} />
+        <Input value={name} onChangeText={setName} onBlur={() => name !== user?.name && autoSave({ name })} />
         <Label text="Email address" />
-        <Input value={email} onChangeText={setEmail} keyboardType="email-address" />
+        <Input value={email} onChangeText={setEmail} keyboardType="email-address" onBlur={() => email !== user?.email && autoSave({ email })} />
+        <Label text="Phone number" />
+        <Input value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="+1 (555) 123 4567" placeholderTextColor={colors.warm} onBlur={() => phone !== (user?.phone || "") && autoSave({ phone })} />
+        <Label text="Preferred language" />
+        <TouchableOpacity
+          onPress={() => setShowLangPicker(!showLangPicker)}
+          style={{ height: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 16, backgroundColor: colors.white, marginBottom: showLangPicker ? 0 : 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
+        >
+          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 15, color: preferredLanguage ? colors.dark : colors.warm }}>
+            {LANGUAGES.find((l) => l.code === preferredLanguage)?.label || "Select language"}
+          </Text>
+          <Feather name={showLangPicker ? "chevron-up" : "chevron-down"} size={18} color={colors.warm} />
+        </TouchableOpacity>
+        {showLangPicker && (
+          <View style={{ borderWidth: 1, borderTopWidth: 0, borderColor: colors.border, borderBottomLeftRadius: 10, borderBottomRightRadius: 10, backgroundColor: colors.white, marginBottom: 16, overflow: "hidden" }}>
+            {LANGUAGES.map((lang) => (
+              <TouchableOpacity
+                key={lang.code}
+                onPress={() => { setPreferredLanguage(lang.code); setShowLangPicker(false); autoSave({ preferredLanguage: lang.code }); }}
+                style={{ paddingHorizontal: 16, paddingVertical: 12, backgroundColor: preferredLanguage === lang.code ? colors.input : colors.white }}
+              >
+                <Text style={{ fontFamily: preferredLanguage === lang.code ? "Inter_600SemiBold" : "Inter_400Regular", fontSize: 15, color: colors.dark }}>{lang.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+        <Label text="Preferred currency" />
+        <TouchableOpacity
+          onPress={() => setShowCurrencyPicker(!showCurrencyPicker)}
+          style={{ height: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 16, backgroundColor: colors.white, marginBottom: showCurrencyPicker ? 0 : 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
+        >
+          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 15, color: preferredCurrency ? colors.dark : colors.warm }}>
+            {CURRENCIES.find((c) => c.code === preferredCurrency)?.label || "Select currency"}
+          </Text>
+          <Feather name={showCurrencyPicker ? "chevron-up" : "chevron-down"} size={18} color={colors.warm} />
+        </TouchableOpacity>
+        {showCurrencyPicker && (
+          <View style={{ borderWidth: 1, borderTopWidth: 0, borderColor: colors.border, borderBottomLeftRadius: 10, borderBottomRightRadius: 10, backgroundColor: colors.white, marginBottom: 16, overflow: "hidden" }}>
+            {CURRENCIES.map((curr) => (
+              <TouchableOpacity
+                key={curr.code}
+                onPress={() => { setPreferredCurrency(curr.code); setShowCurrencyPicker(false); autoSave({ preferredCurrency: curr.code }); }}
+                style={{ paddingHorizontal: 16, paddingVertical: 12, backgroundColor: preferredCurrency === curr.code ? colors.input : colors.white }}
+              >
+                <Text style={{ fontFamily: preferredCurrency === curr.code ? "Inter_600SemiBold" : "Inter_400Regular", fontSize: 15, color: colors.dark }}>{curr.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
-        <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: colors.dark, marginTop: 24, marginBottom: 16 }}>Notification preferences</Text>
+        {/* How others see you */}
+        <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: colors.dark, marginTop: 8, marginBottom: 16 }}>How others see you</Text>
+        <View style={{ backgroundColor: colors.input, borderRadius: 16, padding: 24, alignItems: "center", marginBottom: 24 }}>
+          {user?.avatarUrl ? (
+            <Image source={{ uri: user.avatarUrl?.startsWith("http") ? user.avatarUrl : `${API_URL}${user.avatarUrl}` }} style={{ width: 72, height: 72, borderRadius: 36, borderWidth: 3, borderColor: colors.white, marginBottom: 12 }} />
+          ) : (
+            <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: colors.border, justifyContent: "center", alignItems: "center", borderWidth: 3, borderColor: colors.white, marginBottom: 12 }}>
+              <Text style={{ fontFamily: "Inter_700Bold", fontSize: 24, color: colors.dark }}>{initials}</Text>
+            </View>
+          )}
+          <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 18, color: colors.dark }}>{name || user?.name}</Text>
+          <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: colors.accent, marginTop: 4 }}>Property Buyer</Text>
+          {memberSince ? <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm, marginTop: 2 }}>Member since {memberSince}</Text> : null}
+        </View>
+
+        <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: colors.dark, marginBottom: 16 }}>Notification preferences</Text>
         {[
           { key: "savedSearches", label: "New Explore matching saved searches", desc: "Get alerted when listings match your criteria" },
           { key: "inquiryReplies", label: "Inquiry replies", desc: "Get notified when agents respond" },
@@ -59,7 +234,7 @@ function BuyerAccount() {
         ].map((item) => (
           <View key={item.key} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <View style={{ flex: 1, marginRight: 16 }}><Text style={{ fontFamily: "Inter_500Medium", fontSize: 14, color: colors.dark }}>{item.label}</Text><Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm, marginTop: 2 }}>{item.desc}</Text></View>
-            <Switch value={(notifs as any)[item.key]} onValueChange={(v) => setNotifs((n) => ({ ...n, [item.key]: v }))} trackColor={{ false: colors.border, true: colors.dark }} thumbColor={colors.white} />
+            <Switch value={(notifs as any)[item.key]} onValueChange={(v) => { const updated = { ...notifs, [item.key]: v }; setNotifs(updated); autoSave({ notificationPrefs: updated }); }} trackColor={{ false: colors.border, true: colors.dark }} thumbColor={colors.white} />
           </View>
         ))}
 
@@ -68,15 +243,12 @@ function BuyerAccount() {
         <Input value={currentPassword} onChangeText={setCurrentPassword} secureTextEntry />
         <Label text="Enter new password" />
         <Input value={newPassword} onChangeText={setNewPassword} secureTextEntry />
+        <Label text="Enter new password again" />
+        <Input value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry />
 
-        <View style={{ flexDirection: "row", gap: 12, marginTop: 16, marginBottom: 24 }}>
-          <TouchableOpacity onPress={saveProfile} disabled={saving} style={{ flex: 1, height: 48, backgroundColor: colors.dark, borderRadius: 10, justifyContent: "center", alignItems: "center" }}>
-            <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: colors.offwhite }}>{saving ? "Saving..." : "Save changes"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={{ flex: 1, height: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 10, justifyContent: "center", alignItems: "center", backgroundColor: colors.white }}>
-            <Text style={{ fontFamily: "Inter_500Medium", fontSize: 14, color: colors.dark }}>Discard</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity onPress={changePassword} disabled={changingPassword} style={{ height: 48, backgroundColor: colors.dark, borderRadius: 10, justifyContent: "center", alignItems: "center", marginTop: 16, marginBottom: 24 }}>
+          <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: colors.offwhite }}>{changingPassword ? "Updating..." : "Change password"}</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity onPress={logout} style={{ height: 48, borderWidth: 1, borderColor: colors.red, borderRadius: 10, justifyContent: "center", alignItems: "center" }}>
           <Text style={{ fontFamily: "Inter_500Medium", fontSize: 14, color: colors.red }}>Log out</Text>

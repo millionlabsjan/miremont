@@ -2,10 +2,15 @@ import { View, Text, ScrollView, TouchableOpacity, Image } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { apiRequest } from "../../lib/api";
+import { useAuthStore } from "../../lib/auth";
 import { colors } from "../../constants/theme";
+import { formatPrice } from "../../lib/formatPrice";
+import { useRates } from "../../lib/useRates";
 import { useState } from "react";
 
 export default function AgentListingsScreen() {
+  const userCurrency = useAuthStore((s) => s.user?.preferredCurrency);
+  const rates = useRates();
   const [filter, setFilter] = useState("All");
 
   const { data: listings } = useQuery({
@@ -63,7 +68,7 @@ export default function AgentListingsScreen() {
             <View style={{ padding: 14 }}>
               <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 16, color: colors.dark }}>{prop.title}</Text>
               <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: colors.warm, marginTop: 2 }}>{prop.city}, {prop.country}</Text>
-              <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: colors.dark, marginTop: 6 }}>£{Number(prop.price).toLocaleString()}</Text>
+              <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: colors.dark, marginTop: 6 }}>{formatPrice(prop.price, prop.currency, userCurrency, rates)}</Text>
               <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
                 {prop.bedrooms && <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm }}>🛏 {prop.bedrooms}</Text>}
                 {prop.bathrooms && <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm }}>🚿 {prop.bathrooms}</Text>}

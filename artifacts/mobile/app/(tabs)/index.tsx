@@ -4,6 +4,8 @@ import { router } from "expo-router";
 import { apiRequest } from "../../lib/api";
 import { useAuthStore } from "../../lib/auth";
 import { colors } from "../../constants/theme";
+import { formatPrice } from "../../lib/formatPrice";
+import { useRates } from "../../lib/useRates";
 import { Feather, Ionicons } from "@expo/vector-icons";
 
 const { width } = Dimensions.get("window");
@@ -11,6 +13,8 @@ const CATEGORIES = ["All", "Villa", "Apartment", "Penthouse", "Beachfront", "Est
 
 export default function HomeScreen() {
   const user = useAuthStore((s) => s.user);
+  const rates = useRates();
+  const userCurrency = user?.preferredCurrency;
 
   const queryClient = useQueryClient();
 
@@ -110,7 +114,7 @@ export default function HomeScreen() {
                 </View>
               </View>
               <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 22, color: colors.dark, marginTop: 8 }}>
-                £ {Number(item.price).toLocaleString()}
+                {formatPrice(item.price, item.currency, userCurrency, rates)}
               </Text>
               <View style={{ flexDirection: "row", gap: 16, marginTop: 8, alignItems: "center" }}>
                 {item.bedrooms != null && (

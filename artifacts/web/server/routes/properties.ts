@@ -23,8 +23,16 @@ import {
 import { requireAuth, requireRole } from "../middleware/auth";
 import { z } from "zod";
 import { MIN_PROPERTY_PRICE_USD } from "../../shared/constants";
+import { getRates, convert } from "../services/exchangeRates";
+import { sendPropertyUpdateEmail } from "../email";
 
 export const propertiesRouter = Router();
+
+// Exchange rates endpoint
+propertiesRouter.get("/rates", async (_req, res) => {
+  const rates = await getRates();
+  res.json({ rates });
+});
 
 // Search/browse properties
 propertiesRouter.get("/", async (req, res) => {
@@ -230,7 +238,7 @@ propertiesRouter.post("/", requireRole("agent"), async (req, res) => {
         city: data.city,
         price: data.price.toString(),
         currency: data.currency,
-        priceUsd: data.price.toString(), // TODO: convert to USD
+        priceUsd: convert(data.price, data.currency, "USD", await getRates()).toString(),
         size: data.size?.toString(),
         sizeUnit: data.sizeUnit,
         bedrooms: data.bedrooms,
@@ -285,7 +293,9 @@ propertiesRouter.put("/:id", requireRole("agent"), async (req, res) => {
     .set({
       ...updateData,
       price: updateData.price?.toString(),
-      priceUsd: updateData.price?.toString(),
+      priceUsd: updateData.price
+        ? convert(Number(updateData.price), updateData.currency || existing.currency || "USD", "USD", await getRates()).toString()
+        : undefined,
       size: updateData.size?.toString(),
       latitude: updateData.latitude?.toString(),
       longitude: updateData.longitude?.toString(),
@@ -306,6 +316,34 @@ propertiesRouter.put("/:id", requireRole("agent"), async (req, res) => {
           categoryId: cid,
         }))
       );
+    }
+  }
+
+  // Notify users who favorited this property about price/status changes
+  const priceChanged = updateData.price && String(updateData.price) !== String(existing.price);
+  const statusChanged = updateData.status && updateData.status !== existing.status;
+
+  if (priceChanged || statusChanged) {
+    const changes: string[] = [];
+    if (priceChanged) {
+      const sym = updated.currency === "GBP" ? "£" : updated.currency === "USD" ? "$" : "€";
+      changes.push(`Price changed from ${sym}${Number(existing.price).toLocaleString()} to ${sym}${Number(updated.price).toLocaleString()}`);
+    }
+    if (statusChanged) {
+      changes.push(`Status changed to ${updated.status}`);
+    }
+    const changeDesc = changes.join(". ");
+
+    const favUsers = await db
+      .select({ userId: favorites.userId, email: users.email })
+      .from(favorites)
+      .innerJoin(users, eq(users.id, favorites.userId))
+      .where(eq(favorites.propertyId, req.params.id));
+
+    for (const fav of favUsers) {
+      notify(fav.userId, "property_update", `Update on ${updated.title}`, changeDesc, `/properties/${updated.id}`, {
+        sendEmail: () => sendPropertyUpdateEmail(fav.email, updated.title, changeDesc, updated.id),
+      });
     }
   }
 

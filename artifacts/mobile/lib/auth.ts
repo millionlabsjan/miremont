@@ -9,8 +9,11 @@ export interface User {
   role: "buyer" | "agent" | "admin";
   avatarUrl?: string | null;
   agencyName?: string | null;
+  phone?: string | null;
   preferredLanguage?: string | null;
   preferredCurrency?: string | null;
+  notificationPrefs?: Record<string, boolean> | null;
+  createdAt?: string | null;
 }
 
 interface AuthState {

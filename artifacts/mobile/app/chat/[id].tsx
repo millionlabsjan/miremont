@@ -6,10 +6,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../../lib/api";
 import { useAuthStore } from "../../lib/auth";
 import { colors, WS_URL } from "../../constants/theme";
+import { formatPrice } from "../../lib/formatPrice";
+import { useRates } from "../../lib/useRates";
 
 export default function ChatThreadScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const user = useAuthStore((s) => s.user);
+  const rates = useRates();
   const queryClient = useQueryClient();
   const [messageText, setMessageText] = useState("");
   const flatListRef = useRef<FlatList>(null);
@@ -130,7 +133,7 @@ export default function ChatThreadScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: colors.dark }} numberOfLines={1}>{convo.property.title}</Text>
-              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: colors.warm }}>€ {Number(convo.property.price || 0).toLocaleString()}</Text>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: colors.warm }}>{formatPrice(convo.property.price || 0, convo.property.currency, user?.preferredCurrency, rates)}</Text>
             </View>
             <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: colors.dark }}>View ›</Text>
           </TouchableOpacity>
