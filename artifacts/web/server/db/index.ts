@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { eq } from "drizzle-orm";
 import * as schema from "./schema";
+import { sendPush } from "../push";
 
 const connectionString =
   process.env.DATABASE_URL || "postgresql://Jan@localhost:5432/miremont";
@@ -15,10 +16,13 @@ export type Database = typeof db;
 const PREF_MAP: Record<string, string> = {
   property_update: "propertyUpdates",
   new_message: "inquiryReplies",
+  saved_search_match: "savedSearches",
 };
 
 interface NotifyOptions {
   sendEmail?: () => Promise<void>;
+  /** Set false to skip device push (e.g. background digest types that only email). */
+  push?: boolean;
 }
 
 export async function notify(
@@ -41,7 +45,7 @@ export async function notify(
     const prefs = user?.notificationPrefs as Record<string, boolean> | null;
     // Default to true if preference not explicitly set
     if (prefs && prefs[prefKey] === false) {
-      return; // User opted out — skip notification and email
+      return; // User opted out — skip notification, email, and push
     }
   }
 
@@ -51,6 +55,13 @@ export async function notify(
   if (options?.sendEmail) {
     options.sendEmail().catch((err) => {
       console.warn(`Failed to send notification email for ${type}:`, err);
+    });
+  }
+
+  // Device push (fire-and-forget). Default on; opt out with push: false.
+  if (options?.push !== false) {
+    sendPush(userId, { title, body, data: { type, link } }).catch((err) => {
+      console.warn(`Failed to send push for ${type}:`, err);
     });
   }
 }

@@ -68,6 +68,9 @@ export const users = pgTable(
       propertyUpdates?: boolean;
       newsletter?: boolean;
     }>(),
+    pushTokens: jsonb("push_tokens").$type<
+      Array<{ token: string; platform: "ios" | "android"; lastSeenAt: string }>
+    >(),
     stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
     passwordResetToken: varchar("password_reset_token", { length: 255 }),
     passwordResetExpiresAt: timestamp("password_reset_expires_at"),
@@ -214,6 +217,7 @@ export const savedSearches = pgTable("saved_searches", {
     bedrooms?: number;
     bathrooms?: number;
   }>(),
+  lastNotifiedAt: timestamp("last_notified_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

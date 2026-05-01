@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Plus, AlertTriangle, ArrowRight } from "lucide-react";
@@ -7,6 +8,8 @@ import { formatPrice } from "../../lib/formatPrice";
 
 export default function MyListingsPage() {
   const queryClient = useQueryClient();
+  const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
+  const [draftPrice, setDraftPrice] = useState<string>("");
 
   const { data: listings } = useQuery({
     queryKey: ["my-listings"],
@@ -21,15 +24,31 @@ export default function MyListingsPage() {
   const hidden = props.filter((p: any) => p.status === "delisted" || p.status === "inactive");
   const drafts = props.filter((p: any) => p.status === "draft");
 
-  const updateStatus = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+  const updateProperty = useMutation({
+    mutationFn: async ({ id, ...patch }: { id: string; price?: number; status?: string }) => {
       await apiRequest(`/api/properties/${id}`, {
         method: "PUT",
-        body: JSON.stringify({ status }),
+        body: JSON.stringify(patch),
       });
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["my-listings"] }),
   });
+
+  const startEditPrice = (id: string, current: string) => {
+    setEditingPriceId(id);
+    setDraftPrice(String(Math.round(Number(current))));
+  };
+
+  const savePrice = (id: string) => {
+    const value = Number(draftPrice);
+    if (!Number.isFinite(value) || value <= 0) return;
+    updateProperty.mutate({ id, price: value }, { onSettled: () => setEditingPriceId(null) });
+  };
+
+  const toggleStatus = (id: string, current: string) => {
+    const next = current === "active" ? "delisted" : "active";
+    updateProperty.mutate({ id, status: next });
+  };
 
   return (
     <div className="p-8 max-w-5xl">
@@ -103,16 +122,55 @@ export default function MyListingsPage() {
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-sm truncate">{prop.title}</p>
               <p className="text-xs text-brand-warm">{prop.city}, {prop.country}</p>
-              <p className="font-serif font-bold mt-1">{formatPrice(prop.price, prop.currency)}</p>
+              {editingPriceId === prop.id ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="number"
+                    value={draftPrice}
+                    onChange={(e) => setDraftPrice(e.target.value)}
+                    className="border border-brand-border rounded px-2 py-1 text-sm w-32 font-serif font-bold"
+                    autoFocus
+                  />
+                  <span className="text-xs text-brand-warm">{prop.currency}</span>
+                  <button
+                    onClick={() => savePrice(prop.id)}
+                    disabled={updateProperty.isPending}
+                    className="text-xs bg-brand-dark text-brand-offwhite rounded-full px-3 py-1 font-medium disabled:opacity-50"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setEditingPriceId(null)}
+                    className="text-xs text-brand-warm font-medium"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="font-serif font-bold">{formatPrice(prop.price, prop.currency)}</p>
+                  <button
+                    onClick={() => startEditPrice(prop.id, prop.price)}
+                    className="text-xs text-brand-warm hover:text-brand-dark underline"
+                  >
+                    Edit price
+                  </button>
+                </div>
+              )}
             </div>
-            <div className="text-right shrink-0">
-              <span className={clsx(
-                "text-xs border rounded-full px-3 py-1 font-medium",
-                prop.status === "active" ? "border-green-300 text-green-700" : "border-brand-border text-brand-warm"
-              )}>
+            <div className="text-right shrink-0 space-y-2">
+              <button
+                onClick={() => toggleStatus(prop.id, prop.status)}
+                disabled={updateProperty.isPending}
+                className={clsx(
+                  "text-xs border rounded-full px-3 py-1 font-medium hover:bg-brand-input transition-colors disabled:opacity-50",
+                  prop.status === "active" ? "border-green-300 text-green-700" : "border-brand-border text-brand-warm"
+                )}
+                title="Click to toggle"
+              >
                 {prop.status === "active" ? "Active" : prop.status === "delisted" ? "Hidden" : prop.status}
-              </span>
-              <p className="text-xs text-brand-warm mt-2">
+              </button>
+              <p className="text-xs text-brand-warm">
                 Updated {new Date(prop.lastUpdated).toLocaleDateString()}
               </p>
             </div>
