@@ -1,0 +1,25 @@
+{
+  "name": "Miremont",
+  "baseBranch": "main",
+  "worktreePrefix": "miremont",
+  "dbPushCommand": "pnpm --filter @workspace/web run db:push",
+  "envFile": ".env",
+  "envCheck": ["DATABASE_URL"],
+  "servers": [
+    {
+      "name": "API",
+      "cwd": "artifacts/web",
+      "command": "PORT=$PORT pnpm run dev",
+      "defaultPort": 3000
+    },
+    {
+      "name": "Expo",
+      "cwd": "artifacts/mobile",
+      "command": "EXPO_PUBLIC_LOCAL_API_HOST=$LOCAL_IP EXPO_PUBLIC_LOCAL_API_PORT=$API_PORT pnpm exec expo start --port $PORT",
+      "defaultPort": 8081,
+      "dependsOn": "API",
+      "qrCode": "exp://$LOCAL_IP:$PORT"
+    }
+  ],
+  "credentials": "admin@thepropertycatalogue.com / admin123, emma@luxuryrealty.com / agent123, sophia@example.com / buyer123"
+}
