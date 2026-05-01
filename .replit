@@ -63,3 +63,6 @@ POSTMARK_API_TOKEN = "placeholder-replace-with-real-postmark-server-token"
 
 [nix]
 channel = "stable-25_05"
+
+[objectStorage]
+defaultBucketID = "replit-objstore-4bb16122-a66f-4669-ba9e-4edb3f8deebb"
