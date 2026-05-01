@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { useAuthStore } from "../stores/authStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../lib/queryClient";
 import { clsx } from "clsx";
+import { validatePassword, PASSWORD_RULES_HINT } from "../../../shared/password";
 
 export default function AccountPage() {
   const { user } = useAuth();
+  const setUser = useAuthStore((s) => s.setUser);
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("profile");
   const [name, setName] = useState(user?.name || "");
@@ -31,12 +34,20 @@ export default function AccountPage() {
   };
 
   const changePassword = async () => {
+    const pwError = validatePassword(newPassword);
+    if (pwError) {
+      setMessage(pwError);
+      setTimeout(() => setMessage(""), 3000);
+      return;
+    }
     setSaving(true);
     try {
       await apiRequest("/api/users/password", {
         method: "PUT",
         body: JSON.stringify({ currentPassword, newPassword }),
       });
+      const fresh = await fetch("/api/auth/me", { credentials: "include" }).then((r) => r.ok ? r.json() : null);
+      if (fresh) setUser(fresh);
       setMessage("Password changed");
       setCurrentPassword("");
       setNewPassword("");
@@ -45,6 +56,19 @@ export default function AccountPage() {
       setMessage(err.message);
     }
     setSaving(false);
+  };
+
+  const formatLastLogin = (iso?: string | null) => {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  };
+  const formatRelative = (iso?: string | null) => {
+    if (!iso) return "Not yet changed";
+    const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    if (days < 1) return "Last changed today";
+    if (days < 7) return `Last changed ${days} day${days === 1 ? "" : "s"} ago`;
+    if (days < 60) return `Last changed ${Math.floor(days / 7)} weeks ago`;
+    return `Last changed ${Math.floor(days / 30)} months ago`;
   };
 
   const initials = user?.name
@@ -168,8 +192,8 @@ export default function AccountPage() {
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full h-11 px-4 bg-brand-input border border-brand-border rounded-lg text-sm focus:outline-none"
-                  minLength={8}
+                  placeholder={PASSWORD_RULES_HINT}
+                  className="w-full h-11 px-4 bg-brand-input border border-brand-border rounded-lg text-sm placeholder:text-brand-warm focus:outline-none"
                 />
               </div>
               <button
@@ -191,17 +215,13 @@ export default function AccountPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">Password</p>
-                  <p className="text-xs text-brand-warm">Last changed 3 months ago</p>
+                  <p className="text-xs text-brand-warm">{formatRelative((user as any)?.passwordChangedAt)}</p>
                 </div>
-                <span className="text-brand-dark text-xs font-medium">Change &rarr;</span>
               </div>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium">Two-factor auth</p>
-                  <p className="text-xs text-brand-warm">Authenticator app</p>
-                </div>
-                <div className="w-10 h-6 bg-brand-dark rounded-full relative">
-                  <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full" />
+                  <p className="font-medium">Last login</p>
+                  <p className="text-xs text-brand-warm">{formatLastLogin((user as any)?.lastLoginAt)}</p>
                 </div>
               </div>
             </div>
@@ -231,9 +251,7 @@ export default function AccountPage() {
               {[
                 "New user registrations",
                 "Flagged accounts",
-                "Failed payments",
                 "Stale listing alerts",
-                "System errors",
               ].map((notif) => (
                 <div key={notif} className="flex items-center justify-between">
                   <span>{notif}</span>

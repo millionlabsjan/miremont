@@ -71,6 +71,8 @@ export const users = pgTable(
     stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
     passwordResetToken: varchar("password_reset_token", { length: 255 }),
     passwordResetExpiresAt: timestamp("password_reset_expires_at"),
+    lastLoginAt: timestamp("last_login_at"),
+    passwordChangedAt: timestamp("password_changed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

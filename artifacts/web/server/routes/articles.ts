@@ -28,9 +28,15 @@ articlesRouter.get("/", async (req, res) => {
 
   const conditions: any[] = [];
 
-  if (isAdmin && status) {
+  if (status === "all") {
+    if (!isAdmin) return res.status(403).json({ message: "Forbidden" });
+    // no status filter — admin sees every status
+  } else if (status) {
+    if (!isAdmin && status !== "published") {
+      return res.status(403).json({ message: "Forbidden" });
+    }
     conditions.push(eq(articles.status, status as any));
-  } else if (!isAdmin) {
+  } else {
     conditions.push(eq(articles.status, "published"));
   }
 
@@ -82,10 +88,15 @@ articlesRouter.get("/", async (req, res) => {
 
 // Public: get article by slug
 articlesRouter.get("/by-slug/:slug", async (req, res) => {
+  const isAdmin = req.session.role === "admin";
+  const slugCondition = isAdmin
+    ? eq(articles.slug, req.params.slug)
+    : and(eq(articles.slug, req.params.slug), eq(articles.status, "published"));
+
   const [article] = await db
     .select()
     .from(articles)
-    .where(eq(articles.slug, req.params.slug))
+    .where(slugCondition)
     .limit(1);
 
   if (!article) return res.status(404).json({ message: "Article not found" });

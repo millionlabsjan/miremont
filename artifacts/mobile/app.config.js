@@ -65,6 +65,7 @@ module.exports = ({ config }) => ({
           photosPermission: "Allow The Property Catalogue to access your photos to set your profile picture.",
         },
       ],
+      "@react-native-community/datetimepicker",
     ],
   },
 });

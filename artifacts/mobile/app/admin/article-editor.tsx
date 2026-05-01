@@ -27,7 +27,7 @@ export default function ArticleEditorScreen() {
   const [title, setTitle] = useState<Record<Lang, string>>({ EN: "", FR: "", ES: "", AR: "" });
   const [body, setBody] = useState<Record<Lang, string>>({ EN: "", FR: "", ES: "", AR: "" });
   const [category, setCategory] = useState("");
-  const [status, setStatus] = useState<"draft" | "published">("draft");
+  const [status, setStatus] = useState<"draft" | "published" | "archived">("draft");
   const [authorId, setAuthorId] = useState(user?.id || "");
   const [authorName, setAuthorName] = useState(user?.name || "");
   const [slug, setSlug] = useState("");
@@ -66,7 +66,7 @@ export default function ArticleEditorScreen() {
   // Load existing article for editing
   useEffect(() => {
     if (!id) return;
-    apiRequest(`/api/articles?limit=50`).then((data) => {
+    apiRequest(`/api/articles?limit=50&status=all`).then((data) => {
       const article = data.articles?.find((a: any) => a.id === id);
       if (article) {
         setTitle({
@@ -113,7 +113,7 @@ export default function ArticleEditorScreen() {
     }
   };
 
-  const save = async (asStatus: "draft" | "published") => {
+  const save = async (asStatus: "draft" | "published" | "archived") => {
     if (!title.EN.trim()) {
       Alert.alert("Error", "Article title (EN) is required");
       return;
@@ -161,7 +161,7 @@ export default function ArticleEditorScreen() {
         });
         // If publishing, update status
         if (asStatus === "published") {
-          const articles = await apiRequest("/api/articles?limit=1");
+          const articles = await apiRequest("/api/articles?limit=1&status=all");
           const newArticle = articles.articles?.find((a: any) => a.slug === articleSlug);
           if (newArticle) {
             await apiRequest(`/api/articles/${newArticle.id}`, {
@@ -265,7 +265,7 @@ export default function ArticleEditorScreen() {
           {/* Status */}
           <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: colors.warm, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Status</Text>
           <View style={{ flexDirection: "row", gap: 8, marginBottom: 17 }}>
-            {(["draft", "published"] as const).map((s) => (
+            {(["draft", "published", "archived"] as const).map((s) => (
               <TouchableOpacity key={s} onPress={() => { setStatus(s); setDirty(true); }} style={{ flex: 1, height: 44, borderRadius: 10, backgroundColor: status === s ? colors.dark : colors.offwhite, borderWidth: 1, borderColor: status === s ? colors.dark : colors.border, justifyContent: "center", alignItems: "center" }}>
                 <Text style={{ fontFamily: status === s ? "Inter_600SemiBold" : "Inter_500Medium", fontSize: 13, color: status === s ? colors.offwhite : colors.warm, textTransform: "capitalize" }}>{s}</Text>
               </TouchableOpacity>
@@ -286,8 +286,10 @@ export default function ArticleEditorScreen() {
         <TouchableOpacity onPress={() => save("draft")} disabled={saving} style={{ flex: 1, height: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 10, backgroundColor: colors.offwhite, justifyContent: "center", alignItems: "center" }}>
           <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: colors.dark }}>Save as draft</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => save("published")} disabled={saving} style={{ flex: 1, height: 48, borderRadius: 10, backgroundColor: colors.dark, justifyContent: "center", alignItems: "center" }}>
-          <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: colors.offwhite }}>{saving ? "Saving…" : "Publish"}</Text>
+        <TouchableOpacity onPress={() => save(status)} disabled={saving} style={{ flex: 1, height: 48, borderRadius: 10, backgroundColor: colors.dark, justifyContent: "center", alignItems: "center" }}>
+          <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: colors.offwhite }}>
+            {saving ? "Saving…" : status === "archived" ? "Archive" : status === "published" ? "Publish" : "Save"}
+          </Text>
         </TouchableOpacity>
       </View>
 

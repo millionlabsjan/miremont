@@ -6,6 +6,7 @@ import {
 import { Link, router } from "expo-router";
 import { useAuthStore } from "../../lib/auth";
 import { colors } from "../../constants/theme";
+import { validatePassword, PASSWORD_RULES_HINT } from "../../lib/password";
 
 export default function SignupScreen() {
   const signup = useAuthStore((s) => s.signup);
@@ -15,6 +16,11 @@ export default function SignupScreen() {
 
   const handleSignup = async () => {
     setError("");
+    const pwError = validatePassword(form.password);
+    if (pwError) {
+      setError(pwError);
+      return;
+    }
     setLoading(true);
     try {
       await signup(form.email, form.password, form.name, form.role, form.role === "agent" ? form.agencyName : undefined);
@@ -59,7 +65,7 @@ export default function SignupScreen() {
           <TextInput value={form.email} onChangeText={(v) => setForm((f) => ({ ...f, email: v }))} placeholder="your@email.com" placeholderTextColor={colors.warm} keyboardType="email-address" autoCapitalize="none" style={{ height: 52, backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 16, fontFamily: "Inter_400Regular", fontSize: 15, color: colors.dark, marginBottom: 16 }} />
 
           <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: colors.warm, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Password</Text>
-          <TextInput value={form.password} onChangeText={(v) => setForm((f) => ({ ...f, password: v }))} placeholder="Create a password" placeholderTextColor={colors.warm} secureTextEntry style={{ height: 52, backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 16, fontFamily: "Inter_400Regular", fontSize: 15, color: colors.dark, marginBottom: 16 }} />
+          <TextInput value={form.password} onChangeText={(v) => setForm((f) => ({ ...f, password: v }))} placeholder={PASSWORD_RULES_HINT} placeholderTextColor={colors.warm} secureTextEntry style={{ height: 52, backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 16, fontFamily: "Inter_400Regular", fontSize: 15, color: colors.dark, marginBottom: 16 }} />
 
           <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: colors.warm, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>I am a</Text>
           <View style={{ flexDirection: "row", gap: 8, marginBottom: 24 }}>

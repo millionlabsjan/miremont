@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate, Navigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
+import { validatePassword, PASSWORD_RULES_HINT } from "../../../../shared/password";
 
 export default function SignupPage() {
   const { user, signup } = useAuth();
@@ -22,6 +23,11 @@ export default function SignupPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    const pwError = validatePassword(form.password);
+    if (pwError) {
+      setError(pwError);
+      return;
+    }
     setLoading(true);
     try {
       await signup(
@@ -148,10 +154,9 @@ export default function SignupPage() {
                   type={showPassword ? "text" : "password"}
                   value={form.password}
                   onChange={(e) => update("password", e.target.value)}
-                  placeholder="Min. 8 characters"
+                  placeholder={PASSWORD_RULES_HINT}
                   className="w-full h-[52px] px-4 pr-12 bg-brand-input border border-brand-border rounded-[10px] text-[15px] placeholder:text-brand-warm focus:outline-none focus:ring-2 focus:ring-brand-dark/20"
                   required
-                  minLength={8}
                 />
                 <button
                   type="button"

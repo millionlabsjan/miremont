@@ -35,7 +35,7 @@ export default function AdminArticlesPage() {
     queryKey: ["admin-articles", filter],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (filter !== "all") params.set("status", filter);
+      params.set("status", filter);
       const res = await fetch(`/api/articles?${params}`, { credentials: "include" });
       return res.json();
     },

@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, Alert, Image } from "react-native";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, Alert, Image, ActionSheetIOS, Platform, Modal, KeyboardAvoidingView } from "react-native";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useAuthStore } from "../../lib/auth";
 import { apiRequest, apiUpload } from "../../lib/api";
 import { colors, API_URL } from "../../constants/theme";
 import { router } from "expo-router";
+import { validatePassword, PASSWORD_RULES_HINT } from "../../lib/password";
 
 export default function AccountScreen() {
   const { user, logout } = useAuthStore();
@@ -63,12 +64,17 @@ function BuyerAccount() {
   };
 
   const changePassword = async () => {
-    if (newPassword !== confirmPassword) {
-      Alert.alert("Error", "New passwords do not match");
-      return;
-    }
     if (!currentPassword || !newPassword) {
       Alert.alert("Error", "Please fill in all password fields");
+      return;
+    }
+    const pwError = validatePassword(newPassword);
+    if (pwError) {
+      Alert.alert("Error", pwError);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert("Error", "New passwords do not match");
       return;
     }
     setChangingPassword(true);
@@ -242,7 +248,7 @@ function BuyerAccount() {
         <Label text="Enter current password" />
         <Input value={currentPassword} onChangeText={setCurrentPassword} secureTextEntry />
         <Label text="Enter new password" />
-        <Input value={newPassword} onChangeText={setNewPassword} secureTextEntry />
+        <Input value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder={PASSWORD_RULES_HINT} />
         <Label text="Enter new password again" />
         <Input value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry />
 
@@ -371,7 +377,7 @@ function AdminArticlesTab() {
   const queryClient = useQueryClient();
 
   const params = new URLSearchParams();
-  if (statusFilter !== "all") params.set("status", statusFilter);
+  params.set("status", statusFilter);
   params.set("limit", "50");
   const qs = params.toString();
 
@@ -384,6 +390,34 @@ function AdminArticlesTab() {
   const statuses = ["all", "published", "draft", "archived"];
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString("en-GB", { month: "short", day: "numeric", year: "numeric" });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: "draft" | "published" | "archived" }) =>
+      apiRequest(`/api/articles/${id}`, { method: "PUT", body: JSON.stringify({ status }) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-articles"] }),
+    onError: (err: any) => Alert.alert("Error", err.message || "Could not update article"),
+  });
+
+  const openRowMenu = (article: any) => {
+    const isArchived = article.status === "archived";
+    const archiveLabel = isArchived ? "Restore to draft" : "Archive";
+    const targetStatus: "draft" | "archived" = isArchived ? "draft" : "archived";
+    const onArchive = () => updateStatusMutation.mutate({ id: article.id, status: targetStatus });
+    const onEdit = () => router.push({ pathname: "/admin/article-editor", params: { id: article.id } } as any);
+
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ["Cancel", "Edit", archiveLabel], cancelButtonIndex: 0, destructiveButtonIndex: isArchived ? undefined : 2 },
+        (i) => { if (i === 1) onEdit(); else if (i === 2) onArchive(); },
+      );
+    } else {
+      Alert.alert(article.content?.titleEn || "Article", undefined, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Edit", onPress: onEdit },
+        { text: archiveLabel, style: isArchived ? "default" : "destructive", onPress: onArchive },
+      ]);
+    }
+  };
 
   return (
     <>
@@ -416,7 +450,12 @@ function AdminArticlesTab() {
                 )}
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontFamily: "PlayfairDisplay_600SemiBold", fontSize: 16, color: colors.dark, lineHeight: 21 }} numberOfLines={2}>{article.content?.titleEn || "Untitled"}</Text>
+                <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+                  <Text style={{ flex: 1, fontFamily: "PlayfairDisplay_600SemiBold", fontSize: 16, color: colors.dark, lineHeight: 21 }} numberOfLines={2}>{article.content?.titleEn || "Untitled"}</Text>
+                  <TouchableOpacity onPress={() => openRowMenu(article)} hitSlop={10} style={{ marginTop: -4, marginRight: -8, padding: 4 }}>
+                    <Feather name="more-vertical" size={18} color={colors.warm} />
+                  </TouchableOpacity>
+                </View>
                 <View style={{ backgroundColor: colors.offwhite, borderWidth: 1, borderColor: colors.border, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, alignSelf: "flex-start", marginTop: 8 }}>
                   <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: colors.warm, textTransform: "uppercase", letterSpacing: 0.5 }}>{article.status}</Text>
                 </View>
@@ -443,9 +482,64 @@ function AdminAccount() {
   const [activeTab, setActiveTab] = useState("Overview");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwSaving, setPwSaving] = useState(false);
   const initials = user?.name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) || "?";
   const tabs = ["Overview", "Articles", "Security", "Settings"];
   const queryClient = useQueryClient();
+
+  const { data: me } = useQuery({
+    queryKey: ["auth-me"],
+    queryFn: () => apiRequest("/api/auth/me"),
+  });
+
+  const formatLastLogin = (iso?: string | null) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    return d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  };
+  const formatRelative = (iso?: string | null) => {
+    if (!iso) return "Not yet changed";
+    const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    if (days < 1) return "Last changed today";
+    if (days < 7) return `Last changed ${days} day${days === 1 ? "" : "s"} ago`;
+    if (days < 60) return `Last changed ${Math.floor(days / 7)} weeks ago`;
+    return `Last changed ${Math.floor(days / 30)} months ago`;
+  };
+
+  const submitChangePassword = async () => {
+    if (!pwCurrent || !pwNew || !pwConfirm) {
+      Alert.alert("Error", "Fill in all password fields");
+      return;
+    }
+    const pwError = validatePassword(pwNew);
+    if (pwError) {
+      Alert.alert("Error", pwError);
+      return;
+    }
+    if (pwNew !== pwConfirm) {
+      Alert.alert("Error", "New passwords do not match");
+      return;
+    }
+    setPwSaving(true);
+    try {
+      await apiRequest("/api/users/password", {
+        method: "PUT",
+        body: JSON.stringify({ currentPassword: pwCurrent, newPassword: pwNew }),
+      });
+      setShowChangePassword(false);
+      setPwCurrent(""); setPwNew(""); setPwConfirm("");
+      queryClient.invalidateQueries({ queryKey: ["auth-me"] });
+      Alert.alert("Success", "Password updated");
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Could not update password");
+    } finally {
+      setPwSaving(false);
+    }
+  };
 
   const filterParams = (() => {
     const params = new URLSearchParams();
@@ -627,22 +721,24 @@ function AdminAccount() {
           <>
             <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 22, color: colors.dark, marginBottom: 16 }}>Security</Text>
             <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, backgroundColor: colors.white, overflow: "hidden", marginBottom: 24 }}>
-              {[
-                { label: "Password", desc: "Last changed 3 months ago", action: "Change →" },
-                { label: "Two-factor auth", desc: "Authenticator app enabled", toggle: true },
-                { label: "Active sessions", desc: "2 devices logged in", action: "Manage →" },
-                { label: "Last login", desc: "Today 09:42 · London, UK" },
-              ].map((item, i, arr) => (
-                <View key={item.label} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: i < arr.length - 1 ? 1 : 0, borderBottomColor: colors.border }}>
-                  <View style={{ flex: 1 }}><Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: colors.dark }}>{item.label}</Text><Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm, marginTop: 2 }}>{item.desc}</Text></View>
-                  {item.toggle ? <Switch value={true} trackColor={{ false: colors.border, true: colors.dark }} thumbColor={colors.white} /> : item.action ? <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: colors.dark }}>{item.action}</Text> : null}
+              <TouchableOpacity onPress={() => setShowChangePassword(true)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: colors.dark }}>Password</Text>
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm, marginTop: 2 }}>{formatRelative(me?.passwordChangedAt)}</Text>
                 </View>
-              ))}
+                <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: colors.dark }}>Change →</Text>
+              </TouchableOpacity>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: colors.dark }}>Last login</Text>
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm, marginTop: 2 }}>{formatLastLogin(me?.lastLoginAt)}</Text>
+                </View>
+              </View>
             </View>
 
             <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 22, color: colors.dark, marginBottom: 16 }}>Notifications</Text>
             <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, backgroundColor: colors.white, overflow: "hidden" }}>
-              {["New user registrations", "Flagged accounts", "Failed payments", "Stale listing alerts", "System errors"].map((label, i, arr) => (
+              {["New user registrations", "Flagged accounts", "Stale listing alerts"].map((label, i, arr) => (
                 <View key={label} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: i < arr.length - 1 ? 1 : 0, borderBottomColor: colors.border }}>
                   <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.dark }}>{label}</Text>
                   <Switch value={true} trackColor={{ false: colors.border, true: colors.dark }} thumbColor={colors.white} />
@@ -684,6 +780,37 @@ function AdminAccount() {
           <AdminArticlesTab />
         )}
       </View>
+
+      <Modal visible={showChangePassword} transparent animationType="slide" onRequestClose={() => setShowChangePassword(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+          <TouchableOpacity activeOpacity={1} onPress={() => setShowChangePassword(false)} style={{ flex: 1, backgroundColor: "rgba(28,28,28,0.6)", justifyContent: "flex-end" }}>
+            <TouchableOpacity activeOpacity={1} style={{ backgroundColor: colors.offwhite, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 34 }}>
+              <View style={{ alignItems: "center", marginBottom: 16 }}>
+                <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
+              </View>
+              <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: colors.dark, marginBottom: 16 }}>Change password</Text>
+
+              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: colors.warm, textTransform: "uppercase", letterSpacing: 0.55, marginBottom: 6 }}>Current password</Text>
+              <TextInput value={pwCurrent} onChangeText={setPwCurrent} secureTextEntry placeholder="••••••••" placeholderTextColor={colors.warm} style={{ height: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 14, backgroundColor: colors.white, fontFamily: "Inter_400Regular", fontSize: 14, color: colors.dark, marginBottom: 12 }} />
+
+              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: colors.warm, textTransform: "uppercase", letterSpacing: 0.55, marginBottom: 6 }}>New password</Text>
+              <TextInput value={pwNew} onChangeText={setPwNew} secureTextEntry placeholder={PASSWORD_RULES_HINT} placeholderTextColor={colors.warm} style={{ height: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 14, backgroundColor: colors.white, fontFamily: "Inter_400Regular", fontSize: 14, color: colors.dark, marginBottom: 12 }} />
+
+              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: colors.warm, textTransform: "uppercase", letterSpacing: 0.55, marginBottom: 6 }}>Confirm new password</Text>
+              <TextInput value={pwConfirm} onChangeText={setPwConfirm} secureTextEntry placeholder="Repeat new password" placeholderTextColor={colors.warm} style={{ height: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 14, backgroundColor: colors.white, fontFamily: "Inter_400Regular", fontSize: 14, color: colors.dark, marginBottom: 20 }} />
+
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                <TouchableOpacity onPress={() => setShowChangePassword(false)} style={{ flex: 1, height: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 10, justifyContent: "center", alignItems: "center" }}>
+                  <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: colors.dark }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={submitChangePassword} disabled={pwSaving} style={{ flex: 1, height: 48, borderRadius: 10, backgroundColor: colors.dark, justifyContent: "center", alignItems: "center", opacity: pwSaving ? 0.6 : 1 }}>
+                  <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: colors.offwhite }}>{pwSaving ? "Saving…" : "Update"}</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 }
@@ -694,5 +821,5 @@ function Label({ text }: { text: string }) {
 }
 
 function Input(props: any) {
-  return <TextInput {...props} style={{ height: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 16, fontFamily: "Inter_400Regular", fontSize: 15, color: colors.dark, backgroundColor: colors.white, marginBottom: 16, ...props.style }} />;
+  return <TextInput placeholderTextColor={colors.warm} {...props} style={{ height: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 16, fontFamily: "Inter_400Regular", fontSize: 15, color: colors.dark, backgroundColor: colors.white, marginBottom: 16, ...props.style }} />;
 }

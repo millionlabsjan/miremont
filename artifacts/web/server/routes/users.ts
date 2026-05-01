@@ -6,6 +6,7 @@ import { eq, ilike, and, or, sql, desc, count, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { z } from "zod";
 import argon2 from "argon2";
+import { validatePassword } from "../../shared/password";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -136,7 +137,10 @@ usersRouter.delete("/profile/avatar", requireAuth, async (req, res) => {
 usersRouter.put("/password", requireAuth, async (req, res) => {
   const schema = z.object({
     currentPassword: z.string(),
-    newPassword: z.string().min(8),
+    newPassword: z.string().superRefine((p, ctx) => {
+      const err = validatePassword(p);
+      if (err) ctx.addIssue({ code: z.ZodIssueCode.custom, message: err });
+    }),
   });
 
   try {
@@ -157,9 +161,10 @@ usersRouter.put("/password", requireAuth, async (req, res) => {
     }
 
     const newHash = await argon2.hash(data.newPassword);
+    const now = new Date();
     await db
       .update(users)
-      .set({ passwordHash: newHash, updatedAt: new Date() })
+      .set({ passwordHash: newHash, passwordChangedAt: now, updatedAt: now })
       .where(eq(users.id, req.session.userId!));
 
     res.json({ message: "Password updated" });

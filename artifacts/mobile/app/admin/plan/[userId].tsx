@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Platform } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
+import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { apiRequest } from "../../../lib/api";
 import { colors } from "../../../constants/theme";
 
@@ -30,6 +31,22 @@ export default function PlanManagementScreen() {
   const [features, setFeatures] = useState<Record<string, boolean>>({});
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [iosPickerOpen, setIosPickerOpen] = useState(false);
+
+  const onExpiryChange = (event: DateTimePickerEvent, selected?: Date) => {
+    if (event.type === "set" && selected) {
+      setPlanExpiry(selected.toISOString().split("T")[0]);
+    }
+  };
+
+  const openExpiryPicker = () => {
+    const initial = planExpiry ? new Date(planExpiry) : new Date();
+    if (Platform.OS === "android") {
+      DateTimePickerAndroid.open({ value: initial, mode: "date", onChange: onExpiryChange });
+    } else {
+      setIosPickerOpen(true);
+    }
+  };
 
   const state = data?.state as "no_plan" | "custom" | "stripe" | undefined;
   const user = data?.user;
@@ -67,7 +84,7 @@ export default function PlanManagementScreen() {
         }),
       });
       queryClient.invalidateQueries({ queryKey: ["user-subscription", userId] });
-      Alert.alert("Saved", "Plan changes have been applied.");
+      router.back();
     } catch (err: any) {
       Alert.alert("Error", err.message);
     } finally {
@@ -219,6 +236,8 @@ export default function PlanManagementScreen() {
                   onChangeText={setPlanName}
                   placeholder="e.g. Custom Agency Pro"
                   placeholderTextColor={colors.warm}
+                  textAlignVertical="center"
+                  includeFontPadding={false}
                   style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.dark, padding: 0 }}
                 />
               </View>
@@ -240,17 +259,42 @@ export default function PlanManagementScreen() {
 
               {/* Plan expiry */}
               <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: colors.warm, textTransform: "uppercase", letterSpacing: 0.55, marginBottom: 6 }}>Plan expiry</Text>
-              <View style={{ backgroundColor: "#f4f1ee", borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 14, height: 48, flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
-                <TextInput
-                  value={planExpiry}
-                  onChangeText={setPlanExpiry}
-                  placeholder="Select expiry date"
-                  placeholderTextColor={colors.warm}
-                  style={{ flex: 1, fontFamily: "Inter_400Regular", fontSize: 14, color: colors.dark, padding: 0 }}
-                />
+              <TouchableOpacity
+                onPress={openExpiryPicker}
+                activeOpacity={0.7}
+                style={{ backgroundColor: "#f4f1ee", borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 14, height: 48, flexDirection: "row", alignItems: "center", marginBottom: 6 }}
+              >
+                <Text
+                  style={{
+                    flex: 1,
+                    fontFamily: "Inter_400Regular",
+                    fontSize: 14,
+                    color: planExpiry ? colors.dark : colors.warm,
+                  }}
+                >
+                  {planExpiry ? formatDate(planExpiry) : "Select expiry date"}
+                </Text>
+                {planExpiry ? (
+                  <TouchableOpacity onPress={() => setPlanExpiry("")} hitSlop={8} style={{ marginRight: 10 }}>
+                    <Feather name="x" size={16} color={colors.warm} />
+                  </TouchableOpacity>
+                ) : null}
                 <Feather name="calendar" size={16} color={colors.warm} />
-              </View>
+              </TouchableOpacity>
               <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: colors.warm, marginBottom: 14 }}>Leave blank for no expiry.</Text>
+              {iosPickerOpen && Platform.OS === "ios" && (
+                <View style={{ backgroundColor: "#f4f1ee", borderWidth: 1, borderColor: colors.border, borderRadius: 10, marginBottom: 14, paddingVertical: 8 }}>
+                  <DateTimePicker
+                    value={planExpiry ? new Date(planExpiry) : new Date()}
+                    mode="date"
+                    display="inline"
+                    onChange={(_event, selected) => {
+                      if (selected) setPlanExpiry(selected.toISOString().split("T")[0]);
+                      setIosPickerOpen(false);
+                    }}
+                  />
+                </View>
+              )}
 
               {/* Features included */}
               <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 11, color: colors.warm, textTransform: "uppercase", letterSpacing: 0.55, marginBottom: 6 }}>Features included</Text>

@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Lock, ArrowLeft } from "lucide-react";
+import { Lock, ArrowLeft, Calendar } from "lucide-react";
 import { apiRequest } from "../../lib/queryClient";
 import { clsx } from "clsx";
 
@@ -29,6 +29,7 @@ export default function AdminPlansPage() {
     internalNotes: "",
   });
 
+  const expiryRef = useRef<HTMLInputElement>(null);
   const update = (field: string, value: any) => setForm((f) => ({ ...f, [field]: value }));
   const toggleFeature = (f: string) => {
     setForm((prev) => ({
@@ -133,7 +134,7 @@ export default function AdminPlansPage() {
           <div className="space-y-5">
             <div>
               <label className="block text-[11px] font-semibold text-brand-warm uppercase tracking-wide mb-2">Plan Name</label>
-              <input value={form.planName} onChange={(e) => update("planName", e.target.value)} placeholder="e.g. Custom Agency Pro" className="w-full h-12 px-4 bg-white border border-brand-border rounded-lg text-sm focus:outline-none" />
+              <input value={form.planName} onChange={(e) => update("planName", e.target.value)} placeholder="e.g. Custom Agency Pro" className="w-full px-4 py-3.5 bg-white border border-brand-border rounded-lg text-sm leading-5 focus:outline-none" />
             </div>
 
             <div>
@@ -148,7 +149,12 @@ export default function AdminPlansPage() {
 
             <div>
               <label className="block text-[11px] font-semibold text-brand-warm uppercase tracking-wide mb-2">Plan Expiry</label>
-              <input type="date" value={form.planExpiry} onChange={(e) => update("planExpiry", e.target.value)} className="w-full h-12 px-4 bg-white border border-brand-border rounded-lg text-sm focus:outline-none" />
+              <div className="relative">
+                <input ref={expiryRef} type="date" value={form.planExpiry} onChange={(e) => update("planExpiry", e.target.value)} className="w-full px-4 py-3.5 pr-12 bg-white border border-brand-border rounded-lg text-sm leading-5 focus:outline-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none" />
+                <button type="button" onClick={() => expiryRef.current?.showPicker?.()} className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-warm hover:text-brand-dark" aria-label="Open date picker">
+                  <Calendar size={18} />
+                </button>
+              </div>
               <p className="text-xs text-brand-warm mt-1">Leave blank for no expiry.</p>
             </div>
 

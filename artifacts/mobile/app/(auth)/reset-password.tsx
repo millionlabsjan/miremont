@@ -10,6 +10,7 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import { colors } from "../../constants/theme";
 import { apiRequest } from "../../lib/api";
+import { validatePassword, PASSWORD_RULES_HINT } from "../../lib/password";
 
 export default function ResetPasswordScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
@@ -21,12 +22,13 @@ export default function ResetPasswordScreen() {
   const [success, setSuccess] = useState(false);
 
   const handleReset = async () => {
-    if (password !== confirmPassword) {
-      setError("Passwords do not match");
+    const pwError = validatePassword(password);
+    if (pwError) {
+      setError(pwError);
       return;
     }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters");
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
       return;
     }
 
@@ -205,7 +207,7 @@ export default function ResetPasswordScreen() {
               <TextInput
                 value={password}
                 onChangeText={setPassword}
-                placeholder="Enter new password"
+                placeholder={PASSWORD_RULES_HINT}
                 placeholderTextColor={colors.warm}
                 secureTextEntry={!showPassword}
                 style={{

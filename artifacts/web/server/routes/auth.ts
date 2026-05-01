@@ -7,6 +7,12 @@ import argon2 from "argon2";
 import { nanoid } from "nanoid";
 import crypto from "crypto";
 import { sendPasswordResetEmail } from "../email";
+import { validatePassword } from "../../shared/password";
+
+const passwordSchema = z.string().superRefine((p, ctx) => {
+  const err = validatePassword(p);
+  if (err) ctx.addIssue({ code: z.ZodIssueCode.custom, message: err });
+});
 
 // Sign a session ID the same way express-session does
 function signSessionId(sessionId: string, secret: string): string {
@@ -24,7 +30,7 @@ export const authRouter = Router();
 
 const signupSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8),
+  password: passwordSchema,
   name: z.string().min(1),
   role: z.enum(["buyer", "agent"]).default("buyer"),
   agencyName: z.string().optional(),
@@ -113,6 +119,8 @@ authRouter.post("/login", async (req, res) => {
     req.session.userId = user.id;
     req.session.role = user.role;
 
+    await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
+
     // Force save session, then return the signed cookie for mobile clients
     req.session.save(() => {
       const signedCookie = signSessionId(req.sessionID, SESSION_SECRET);
@@ -196,7 +204,7 @@ authRouter.post("/forgot-password", async (req, res) => {
 authRouter.post("/reset-password", async (req, res) => {
   try {
     const { token, password } = z
-      .object({ token: z.string(), password: z.string().min(8) })
+      .object({ token: z.string(), password: passwordSchema })
       .parse(req.body);
 
     const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
@@ -222,6 +230,7 @@ authRouter.post("/reset-password", async (req, res) => {
       .update(users)
       .set({
         passwordHash,
+        passwordChangedAt: new Date(),
         passwordResetToken: null,
         passwordResetExpiresAt: null,
       })
@@ -256,6 +265,8 @@ authRouter.get("/me", async (req, res) => {
       notificationPrefs: users.notificationPrefs,
       status: users.status,
       createdAt: users.createdAt,
+      lastLoginAt: users.lastLoginAt,
+      passwordChangedAt: users.passwordChangedAt,
     })
     .from(users)
     .where(eq(users.id, req.session.userId))
