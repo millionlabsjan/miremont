@@ -21,8 +21,11 @@ export default function ChatThreadScreen() {
   const flatListRef = useRef<FlatList>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
-  const resolveAttachmentUrl = (url: string) =>
-    url.startsWith("http") ? url : `${API_URL}${url}`;
+  const resolveAttachmentUrl = (url: string, cacheBuster?: string | number) => {
+    const absolute = url.startsWith("http") ? url : `${API_URL}${url}`;
+    if (!cacheBuster) return absolute;
+    return absolute.includes("?") ? `${absolute}&v=${cacheBuster}` : `${absolute}?v=${cacheBuster}`;
+  };
 
   const pickFromLibrary = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -52,11 +55,27 @@ export default function ChatThreadScreen() {
   };
 
   const addAssets = (assets: ImagePicker.ImagePickerAsset[]) => {
+    const EXT_TO_MIME: Record<string, string> = {
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      webp: "image/webp",
+      gif: "image/gif",
+      heic: "image/heic",
+      heif: "image/heif",
+    };
     const next = assets.slice(0, 5 - pendingImages.length).map((a) => {
-      const filename = a.fileName || a.uri.split("/").pop() || `image-${Date.now()}.jpg`;
-      const ext = (filename.split(".").pop() || "jpg").toLowerCase();
-      const type = a.mimeType || (ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg");
-      return { uri: a.uri, name: filename, type };
+      const rawName = a.fileName || a.uri.split("/").pop() || `image-${Date.now()}.jpg`;
+      const ext = (rawName.split(".").pop() || "jpg").toLowerCase();
+      // Prefer the picker's reported mime; fall back to extension lookup;
+      // final fallback is JPEG (Expo's default after picker conversion).
+      const type = a.mimeType || EXT_TO_MIME[ext] || "image/jpeg";
+      // Make sure the filename's extension actually matches the mime type the
+      // server is going to record — otherwise the bucket key gets the wrong
+      // extension and Content-Type negotiation breaks on the way back out.
+      const expectedExt = type === "image/jpeg" ? "jpg" : type.split("/")[1];
+      const name = ext === expectedExt ? rawName : `${rawName.replace(/\.[^.]+$/, "")}.${expectedExt}`;
+      return { uri: a.uri, name, type };
     });
     setPendingImages((prev) => [...prev, ...next]);
   };
@@ -246,14 +265,20 @@ export default function ChatThreadScreen() {
             <View style={{ alignItems: isMine ? "flex-end" : "flex-start" }}>
               {hasAttachments && (
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, maxWidth: "80%", marginBottom: hasContent ? 4 : 0, justifyContent: isMine ? "flex-end" : "flex-start" }}>
-                  {item.attachments.map((url: string, i: number) => (
-                    <Image
-                      key={i}
-                      source={{ uri: resolveAttachmentUrl(url) }}
-                      style={{ width: 200, height: 200, borderRadius: 12, backgroundColor: colors.input }}
-                      resizeMode="cover"
-                    />
-                  ))}
+                  {item.attachments.map((url: string, i: number) => {
+                    const finalUri = resolveAttachmentUrl(url, item.id || item.createdAt);
+                    return (
+                      <Image
+                        key={i}
+                        source={{ uri: finalUri }}
+                        style={{ width: 200, height: 200, borderRadius: 12, backgroundColor: colors.input }}
+                        resizeMode="cover"
+                        onError={(e) =>
+                          console.warn("[chat] image load failed", finalUri, e?.nativeEvent?.error)
+                        }
+                      />
+                    );
+                  })}
                 </View>
               )}
               {hasContent && (

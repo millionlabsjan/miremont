@@ -10,7 +10,15 @@ import { getStorage } from "../storage";
 
 export const inquiriesRouter = Router();
 
-const ALLOWED_IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"];
+const ALLOWED_IMAGE_MIMES = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/heic",
+  "image/heif",
+];
 const attachmentUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024, files: 5 },
@@ -330,7 +338,7 @@ inquiriesRouter.post(
 
       const files = (req.files as Express.Multer.File[] | undefined) || [];
       if (files.length === 0) {
-        return res.status(400).json({ message: "No images uploaded (jpeg/png/webp, max 10MB each)" });
+        return res.status(400).json({ message: "No images uploaded (jpeg/png/webp/gif/heic, max 10MB each)" });
       }
 
       const storage = await getStorage();

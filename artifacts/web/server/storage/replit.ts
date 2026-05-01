@@ -7,6 +7,9 @@ const EXT_FROM_MIME: Record<string, string> = {
   "image/jpg": ".jpg",
   "image/png": ".png",
   "image/webp": ".webp",
+  "image/gif": ".gif",
+  "image/heic": ".heic",
+  "image/heif": ".heif",
 };
 
 const CONTENT_TYPE_FROM_EXT: Record<string, string> = {
@@ -14,6 +17,9 @@ const CONTENT_TYPE_FROM_EXT: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".png": "image/png",
   ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".heic": "image/heic",
+  ".heif": "image/heif",
 };
 
 /**
@@ -46,10 +52,21 @@ export async function createReplitStorage(): Promise<StorageBackend> {
         res.status(404).end();
         return;
       }
+      // The SDK returns a tuple [Buffer]; unwrap defensively in case it ever
+      // returns the Buffer directly.
+      const raw = result.value as unknown;
+      const buffer: Buffer = Buffer.isBuffer(raw)
+        ? raw
+        : Array.isArray(raw)
+          ? (raw[0] as Buffer)
+          : Buffer.from(raw as ArrayBuffer);
       const ext = path.extname(fullKey).toLowerCase();
-      res.setHeader("Content-Type", CONTENT_TYPE_FROM_EXT[ext] || "application/octet-stream");
+      const contentType = CONTENT_TYPE_FROM_EXT[ext] || "image/jpeg";
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Content-Length", buffer.length.toString());
       res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-      res.end(result.value[0]);
+      // Use res.send so Express manages framing/etag; it preserves our headers.
+      res.send(buffer);
     },
   };
 }

@@ -12,6 +12,9 @@ const EXT_FROM_MIME: Record<string, string> = {
   "image/jpg": ".jpg",
   "image/png": ".png",
   "image/webp": ".webp",
+  "image/gif": ".gif",
+  "image/heic": ".heic",
+  "image/heif": ".heif",
 };
 
 export async function createDiskStorage(): Promise<StorageBackend> {
