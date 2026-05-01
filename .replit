@@ -60,6 +60,7 @@ externalPort = 3002
 
 [userenv.shared]
 POSTMARK_API_TOKEN = "placeholder-replace-with-real-postmark-server-token"
+REPLIT_OBJSTORE_BUCKET_ID = "replit-objstore-4bb16122-a66f-4669-ba9e-4edb3f8deebb"
 
 [nix]
 channel = "stable-25_05"
