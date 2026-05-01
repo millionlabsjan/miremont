@@ -40,8 +40,12 @@ export async function createReplitStorage(): Promise<StorageBackend> {
       if (!result.ok) {
         throw new Error(`Object Storage upload failed: ${result.error.message}`);
       }
-      // Public URL is served via our /uploads/chat/:key proxy route.
-      return { url: `/uploads/chat/${path.basename(key)}`, key };
+      // Public URL is served via our /api/uploads/chat/:key proxy route.
+      // The /api/ prefix is required: Replit's edge proxy detects iOS Expo
+      // CFNetwork user-agents and routes any non-/api path to the mobile dev
+      // server, which serves an HTML shell instead of the image. Browsers
+      // (web client) reach the same handler either way. See replit.md.
+      return { url: `/api/uploads/chat/${path.basename(key)}`, key };
     },
 
     async streamFile(key, res) {

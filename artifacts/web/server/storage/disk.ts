@@ -28,7 +28,11 @@ export async function createDiskStorage(): Promise<StorageBackend> {
       const key = `${crypto.randomUUID()}${ext}`;
       const fullPath = path.join(UPLOADS_DIR, key);
       await fs.promises.writeFile(fullPath, buffer);
-      return { url: `/uploads/chat/${key}`, key };
+      // /api/ prefix is required for iOS Expo clients; see replit.md.
+      // Disk-backed dev still works because Express also has /api/uploads/chat/:key
+      // routed; for disk we serve via that handler too (it falls through to the
+      // file). Web browsers don't trigger the issue.
+      return { url: `/api/uploads/chat/${key}`, key };
     },
 
     async streamFile(key, res) {

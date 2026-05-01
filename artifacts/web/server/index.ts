@@ -63,13 +63,14 @@ const streamChatAttachment = async (req: express.Request, res: express.Response)
   try {
     const { getStorage } = await import("./storage");
     const storage = await getStorage();
-    if (storage.name === "disk") {
-      return res.status(404).end(); // disk is served by express.static above
-    }
+    // For disk storage, /uploads/chat/:key is already handled by the
+    // express.static mount above (legacy web URLs). The /api/uploads/chat/:key
+    // route requires us to read the file ourselves — streamFile() does that
+    // for both backends.
     await storage.streamFile(req.params.key, res);
   } catch (err) {
     console.warn("Chat attachment stream failed:", err);
-    res.status(404).end();
+    if (!res.headersSent) res.status(404).end();
   }
 };
 app.get("/uploads/chat/:key", streamChatAttachment);
