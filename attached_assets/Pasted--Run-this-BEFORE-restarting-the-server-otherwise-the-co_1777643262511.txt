@@ -1,0 +1,44 @@
+ Run this BEFORE restarting the server, otherwise the code will crash trying to read columns that don't exist:                                                                                                
+                                                                                                                                                                                                             
+  psql "$DATABASE_URL" -c 'ALTER TABLE users ADD COLUMN IF NOT EXISTS push_tokens jsonb;'                                                                                                                      
+  psql "$DATABASE_URL" -c 'ALTER TABLE saved_searches ADD COLUMN IF NOT EXISTS last_notified_at timestamp;'                                                                                                    
+                                                                                                                                                                                                               
+  Verify:                                                                                                                                                                                                      
+  psql "$DATABASE_URL" -c '\d users' | grep push_tokens                                                                                                                                                        
+  psql "$DATABASE_URL" -c '\d saved_searches' | grep last_notified_at                                                                                                                                        
+  Both should print a row.                                                                                                                                                                                     
+   
+  Step 3 — Install new dependencies                                                                                                                                                                            
+                                                                                                                                                                                                             
+  pnpm install                                                                                                                                                                                                 
+                                                                                                                                                                                                             
+  This pulls in:                                                                                                                                                                                               
+  - @replit/object-storage (server)
+  - expo-server-sdk (server)                                                                                                                                                                                   
+  - expo-notifications + expo-device (mobile — only matters when you next rebuild the Expo binary)                                                                                                           
+                                                                                                                                                                                                               
+  Step 4 — Enable Object Storage (one-time, recommended)                                                                                                                                                       
+   
+  This is the only step done in the Replit UI, not the shell:                                                                                                                                                  
+                                                                                                                                                                                                             
+  1. Look at the left sidebar in your Replit workspace                                                                                                                                                         
+  2. Click Tools (the wrench icon)                                                                                                                                                                           
+  3. Click + Add tool if it's not already there                                                                                                                                                                
+  4. Pick Object Storage                                                                                                                                                                                       
+  5. Click Create a Bucket — Replit creates one and auto-injects REPLIT_OBJSTORE_BUCKET_ID into your project's env (you'll see it appear in the Secrets tab)                                                   
+                                                                                                                                                                                                               
+  You don't need to copy any keys — the SDK reads it automatically.                                                                                                                                            
+                                                                                                                                                                                                               
+  If you skip this step, chat image attachments still work via local disk — but on Replit autoscale they'll vanish on every redeploy. So do it before going live.                                              
+                                                                                                                                                                                                             
+  Step 5 — Restart the server                                                                                                                                                                                  
+                                                                                                                                                                                                             
+  In Replit, click the big Run (▶) button at the top. Or if you keep the server running via shell:                                                                                                             
+                                                                                                                                                                                                             
+  # Find and stop the current process                                                                                                                                                                          
+  pkill -f "tsx server/index.ts" 2>/dev/null                                                                                                                                                                   
+  # Wait, then start fresh — Replit's Run button does this for you
+                                                                                                                                                                                                               
+  When the server boots, it will log one of these:                                                                                                                                                             
+  - Storage: disk — Object Storage not enabled (Step 4 skipped)                                                                                                                                                
+  - Storage: replit-object-storage (bucket ...) — ✅ correctly wired                                                      
