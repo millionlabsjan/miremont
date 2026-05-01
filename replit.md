@@ -39,4 +39,12 @@ These need real values for full functionality (placeholders set so the server ca
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
 - `pnpm --filter @workspace/web run db:push` — push Drizzle schema changes to Postgres (dev only)
 
+## Replit edge proxy gotcha (mobile asset URLs)
+
+The Replit edge proxy detects iOS Expo's `CFNetwork`/`Darwin` user-agent and routes any request whose path is **not** prefixed with `/api/` to the mobile dev server, even on the web subdomain. The Expo dev server then serves its SPA index.html (~1435 bytes of `<!DOCTYPE html>… <style id="expo-reset">…`) for unknown paths, so the web Express server never sees those requests on iOS.
+
+Practical impact: any binary asset the mobile app needs to fetch from the web backend (chat photos, avatars, exports, etc.) **must** be served from a path beginning with `/api/`. Otherwise iOS shows a grey placeholder and you'll see `Error decoding image data <NSData …; 1435 bytes>` in the Expo log.
+
+The chat-attachment proxy in `artifacts/web/server/index.ts` is therefore registered at both `/uploads/chat/:key` (for the web client) and `/api/uploads/chat/:key` (used by mobile). `resolveAttachmentUrl` in `artifacts/mobile/app/chat/[id].tsx` rewrites stored `/uploads/chat/...` URLs to the `/api/...` form before handing them to `<Image>`. Apply the same pattern to any future binary endpoint mobile consumes.
+
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.

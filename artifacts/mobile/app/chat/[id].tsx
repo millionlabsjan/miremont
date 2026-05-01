@@ -22,7 +22,14 @@ export default function ChatThreadScreen() {
   const wsRef = useRef<WebSocket | null>(null);
 
   const resolveAttachmentUrl = (url: string, cacheBuster?: string | number) => {
-    const absolute = url.startsWith("http") ? url : `${API_URL}${url}`;
+    // Rewrite /uploads/chat/* to /api/uploads/chat/* on mobile. Replit's edge
+    // proxy detects iOS Expo CFNetwork user-agents and routes any non-/api path
+    // to the mobile dev server, which serves an HTML SPA shell (~1435 bytes)
+    // instead of the image. Hitting /api/* forces the proxy to route by URL
+    // prefix and reach our Express server. Use split/join so we don't have to
+    // escape regex metacharacters in API_URL.
+    const rewritten = url.split("/uploads/chat/").join("/api/uploads/chat/");
+    const absolute = rewritten.startsWith("http") ? rewritten : `${API_URL}${rewritten}`;
     if (!cacheBuster) return absolute;
     return absolute.includes("?") ? `${absolute}&v=${cacheBuster}` : `${absolute}?v=${cacheBuster}`;
   };

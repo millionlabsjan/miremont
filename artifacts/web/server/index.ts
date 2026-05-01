@@ -53,7 +53,13 @@ app.use("/uploads", express.static(uploadsPath));
 // Chat attachments: when running on Replit Object Storage, express.static can't
 // reach the bucket — fall through to a streaming proxy here. On local disk,
 // express.static handles the file first and this route never fires.
-app.get("/uploads/chat/:key", async (req, res) => {
+//
+// We register the SAME handler at /api/uploads/chat/:key as well. Replit's edge
+// proxy detects Expo CFNetwork user-agents on iOS and routes any non-API path
+// to the mobile dev server (which then serves its SPA index.html — about 1435
+// bytes of HTML — instead of our image). Routes under /api/ are routed by URL
+// prefix and bypass that UA detection, so iOS Image fetches work correctly.
+const streamChatAttachment = async (req: express.Request, res: express.Response) => {
   try {
     const { getStorage } = await import("./storage");
     const storage = await getStorage();
@@ -65,7 +71,9 @@ app.get("/uploads/chat/:key", async (req, res) => {
     console.warn("Chat attachment stream failed:", err);
     res.status(404).end();
   }
-});
+};
+app.get("/uploads/chat/:key", streamChatAttachment);
+app.get("/api/uploads/chat/:key", streamChatAttachment);
 
 // Mobile auth: copy x-session-cookie header into Cookie header
 // React Native's fetch strips Cookie headers, so mobile sends via x-session-cookie instead
