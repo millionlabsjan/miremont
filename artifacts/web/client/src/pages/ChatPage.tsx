@@ -20,6 +20,7 @@ interface Message {
   inquiryId: string;
   senderId: string;
   content: string;
+  attachments?: string[] | null;
   createdAt: string;
   isRead: boolean;
 }
@@ -30,8 +31,28 @@ export default function ChatPage() {
   const [activeConvo, setActiveConvo] = useState<string | null>(null);
   const [messageText, setMessageText] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [pendingPreviews, setPendingPreviews] = useState<string[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+
+  const onFilesPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    const room = 5 - pendingFiles.length;
+    const accepted = files.slice(0, room).filter((f) => f.type.startsWith("image/"));
+    setPendingFiles((prev) => [...prev, ...accepted]);
+    setPendingPreviews((prev) => [...prev, ...accepted.map((f) => URL.createObjectURL(f))]);
+    e.target.value = ""; // allow re-selecting the same file
+  };
+
+  const removePendingFile = (idx: number) => {
+    URL.revokeObjectURL(pendingPreviews[idx]);
+    setPendingFiles((prev) => prev.filter((_, i) => i !== idx));
+    setPendingPreviews((prev) => prev.filter((_, i) => i !== idx));
+  };
 
   // Connect WebSocket
   useEffect(() => {
@@ -94,26 +115,53 @@ export default function ChatPage() {
   }, [activeConvo]);
 
   const sendMessage = async () => {
-    if (!messageText.trim() || !activeConvo) return;
+    const trimmed = messageText.trim();
+    if (!activeConvo) return;
+    if (!trimmed && pendingFiles.length === 0) return;
+    if (isUploading) return;
 
-    // Send via WebSocket if connected
+    let attachments: string[] = [];
+    if (pendingFiles.length > 0) {
+      setIsUploading(true);
+      try {
+        const formData = new FormData();
+        pendingFiles.forEach((f) => formData.append("files", f));
+        const res = await fetch(`/api/inquiries/${activeConvo}/attachments`, {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.message || "Upload failed");
+        }
+        const json = await res.json();
+        attachments = json.urls || [];
+      } catch (err: any) {
+        alert(err.message || "Upload failed");
+        setIsUploading(false);
+        return;
+      }
+      setIsUploading(false);
+    }
+
+    const payload: any = { content: trimmed, ...(attachments.length ? { attachments } : {}) };
+
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(
-        JSON.stringify({
-          type: "send_message",
-          inquiryId: activeConvo,
-          content: messageText,
-        })
+        JSON.stringify({ type: "send_message", inquiryId: activeConvo, ...payload })
       );
     } else {
-      // Fallback to REST
       await apiRequest(`/api/inquiries/${activeConvo}/messages`, {
         method: "POST",
-        body: JSON.stringify({ content: messageText }),
+        body: JSON.stringify(payload),
       });
     }
 
     setMessageText("");
+    pendingPreviews.forEach((u) => URL.revokeObjectURL(u));
+    setPendingFiles([]);
+    setPendingPreviews([]);
     queryClient.invalidateQueries({ queryKey: ["messages", activeConvo] });
     queryClient.invalidateQueries({ queryKey: ["conversations"] });
   };
@@ -212,7 +260,6 @@ export default function ChatPage() {
                   {activeConversation.otherUser.agencyName ||
                     activeConversation.otherUser.name}
                 </p>
-                <p className="text-xs text-green-600">Online</p>
               </div>
             </div>
 
@@ -225,16 +272,31 @@ export default function ChatPage() {
                     key={msg.id}
                     className={clsx("flex flex-col", isMine ? "items-end" : "items-start")}
                   >
-                    <div
-                      className={clsx(
-                        "max-w-[70%] rounded-2xl px-4 py-3 text-sm",
-                        isMine
-                          ? "bg-brand-dark text-brand-offwhite rounded-br-md"
-                          : "bg-brand-input text-brand-dark rounded-bl-md"
-                      )}
-                    >
-                      {msg.content}
-                    </div>
+                    {msg.attachments && msg.attachments.length > 0 && (
+                      <div className={clsx("flex flex-wrap gap-1 max-w-[70%] mb-1", isMine ? "justify-end" : "justify-start")}>
+                        {msg.attachments.map((url, i) => (
+                          <a key={i} href={url} target="_blank" rel="noreferrer">
+                            <img
+                              src={url}
+                              alt=""
+                              className="w-48 h-48 object-cover rounded-2xl bg-brand-input"
+                            />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    {msg.content && (
+                      <div
+                        className={clsx(
+                          "max-w-[70%] rounded-2xl px-4 py-3 text-sm",
+                          isMine
+                            ? "bg-brand-dark text-brand-offwhite rounded-br-md"
+                            : "bg-brand-input text-brand-dark rounded-bl-md"
+                        )}
+                      >
+                        {msg.content}
+                      </div>
+                    )}
                     <p className="text-[10px] text-brand-warm mt-1">
                       {format(new Date(msg.createdAt), "MMM d, h:mm a")}
                     </p>
@@ -246,8 +308,39 @@ export default function ChatPage() {
 
             {/* Message input */}
             <div className="p-4 border-t border-brand-border bg-white">
+              {pendingPreviews.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {pendingPreviews.map((src, i) => (
+                    <div key={src} className="relative">
+                      <img src={src} alt="" className="w-14 h-14 object-cover rounded-lg bg-brand-input" />
+                      <button
+                        onClick={() => removePendingFile(i)}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-brand-dark text-brand-offwhite rounded-full flex items-center justify-center text-xs"
+                        aria-label="Remove image"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="flex items-center gap-3">
-                <button className="text-brand-warm hover:text-brand-dark">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  capture="environment"
+                  onChange={onFilesPicked}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading || pendingFiles.length >= 5}
+                  className="text-brand-warm hover:text-brand-dark disabled:opacity-40"
+                  title="Attach image"
+                >
                   <Paperclip size={20} />
                 </button>
                 <input
@@ -256,11 +349,12 @@ export default function ChatPage() {
                   onChange={(e) => setMessageText(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && sendMessage()}
                   placeholder="Type a message..."
-                  className="flex-1 h-10 px-4 bg-brand-offwhite border border-brand-border rounded-full text-sm placeholder:text-brand-warm focus:outline-none"
+                  disabled={isUploading}
+                  className="flex-1 h-10 px-4 bg-brand-offwhite border border-brand-border rounded-full text-sm placeholder:text-brand-warm focus:outline-none disabled:opacity-50"
                 />
                 <button
                   onClick={sendMessage}
-                  disabled={!messageText.trim()}
+                  disabled={isUploading || (!messageText.trim() && pendingFiles.length === 0)}
                   className="w-10 h-10 bg-brand-dark rounded-full flex items-center justify-center text-brand-offwhite hover:bg-brand-dark/90 disabled:opacity-50"
                 >
                   <Send size={16} />

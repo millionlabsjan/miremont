@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { View, Text, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, Image } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, Image, ActionSheetIOS, Alert } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "../../lib/api";
+import * as ImagePicker from "expo-image-picker";
+import { apiRequest, apiUpload } from "../../lib/api";
 import { useAuthStore } from "../../lib/auth";
-import { colors, WS_URL } from "../../constants/theme";
+import { colors, WS_URL, API_URL } from "../../constants/theme";
 import { formatPrice } from "../../lib/formatPrice";
 import { useRates } from "../../lib/useRates";
 
@@ -15,8 +16,76 @@ export default function ChatThreadScreen() {
   const rates = useRates();
   const queryClient = useQueryClient();
   const [messageText, setMessageText] = useState("");
+  const [pendingImages, setPendingImages] = useState<{ uri: string; name: string; type: string }[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const wsRef = useRef<WebSocket | null>(null);
+
+  const resolveAttachmentUrl = (url: string) =>
+    url.startsWith("http") ? url : `${API_URL}${url}`;
+
+  const pickFromLibrary = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsMultipleSelection: true,
+      selectionLimit: 5 - pendingImages.length,
+      quality: 0.8,
+    });
+    if (result.canceled) return;
+    addAssets(result.assets);
+  };
+
+  const takePhoto = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Camera permission needed", "Enable it in Settings to take photos.");
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ["images"],
+      quality: 0.8,
+    });
+    if (result.canceled) return;
+    addAssets(result.assets);
+  };
+
+  const addAssets = (assets: ImagePicker.ImagePickerAsset[]) => {
+    const next = assets.slice(0, 5 - pendingImages.length).map((a) => {
+      const filename = a.fileName || a.uri.split("/").pop() || `image-${Date.now()}.jpg`;
+      const ext = (filename.split(".").pop() || "jpg").toLowerCase();
+      const type = a.mimeType || (ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg");
+      return { uri: a.uri, name: filename, type };
+    });
+    setPendingImages((prev) => [...prev, ...next]);
+  };
+
+  const removePendingImage = (uri: string) => {
+    setPendingImages((prev) => prev.filter((p) => p.uri !== uri));
+  };
+
+  const onPaperclipPress = () => {
+    if (pendingImages.length >= 5) {
+      Alert.alert("Limit reached", "You can attach up to 5 images per message.");
+      return;
+    }
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ["Cancel", "Take photo", "Choose from library"], cancelButtonIndex: 0 },
+        (idx) => {
+          if (idx === 1) takePhoto();
+          if (idx === 2) pickFromLibrary();
+        }
+      );
+    } else {
+      Alert.alert("Add image", "Choose source", [
+        { text: "Take photo", onPress: takePhoto },
+        { text: "Choose from library", onPress: pickFromLibrary },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    }
+  };
 
   const { data: messages } = useQuery({
     queryKey: ["messages", id],
@@ -92,13 +161,36 @@ export default function ChatThreadScreen() {
   }, [user, id]);
 
   const sendMessage = async () => {
-    if (!messageText.trim()) return;
+    const trimmed = messageText.trim();
+    if (!trimmed && pendingImages.length === 0) return;
+    if (isUploading) return;
+
+    let attachments: string[] = [];
+    if (pendingImages.length > 0) {
+      setIsUploading(true);
+      try {
+        const formData = new FormData();
+        pendingImages.forEach((img) => {
+          formData.append("files", { uri: img.uri, name: img.name, type: img.type } as any);
+        });
+        const result = await apiUpload(`/api/inquiries/${id}/attachments`, formData);
+        attachments = result?.urls || [];
+      } catch (err: any) {
+        Alert.alert("Upload failed", err?.message || "Could not upload images");
+        setIsUploading(false);
+        return;
+      }
+      setIsUploading(false);
+    }
+
+    const payload = { content: trimmed, ...(attachments.length ? { attachments } : {}) };
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "send_message", inquiryId: id, content: messageText }));
+      wsRef.current.send(JSON.stringify({ type: "send_message", inquiryId: id, ...payload }));
     } else {
-      await apiRequest(`/api/inquiries/${id}/messages`, { method: "POST", body: JSON.stringify({ content: messageText }) });
+      await apiRequest(`/api/inquiries/${id}/messages`, { method: "POST", body: JSON.stringify(payload) });
     }
     setMessageText("");
+    setPendingImages([]);
     queryClient.invalidateQueries({ queryKey: ["messages", id] });
     queryClient.invalidateQueries({ queryKey: ["conversations"] });
   };
@@ -118,7 +210,6 @@ export default function ChatThreadScreen() {
             <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: colors.dark }}>
               {convo?.otherUser?.agencyName || convo?.otherUser?.name || "Conversation"}
             </Text>
-            <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.green }}>Online</Text>
           </View>
         </View>
 
@@ -149,19 +240,35 @@ export default function ChatThreadScreen() {
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
         renderItem={({ item }) => {
           const isMine = item.senderId === user?.id;
+          const hasAttachments = Array.isArray(item.attachments) && item.attachments.length > 0;
+          const hasContent = !!item.content && item.content.length > 0;
           return (
             <View style={{ alignItems: isMine ? "flex-end" : "flex-start" }}>
-              <View style={{
-                maxWidth: "80%",
-                backgroundColor: isMine ? colors.dark : colors.input,
-                borderRadius: 16,
-                borderBottomRightRadius: isMine ? 4 : 16,
-                borderBottomLeftRadius: isMine ? 16 : 4,
-                paddingHorizontal: 14,
-                paddingVertical: 10,
-              }}>
-                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: isMine ? colors.offwhite : colors.dark, lineHeight: 20 }}>{item.content}</Text>
-              </View>
+              {hasAttachments && (
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, maxWidth: "80%", marginBottom: hasContent ? 4 : 0, justifyContent: isMine ? "flex-end" : "flex-start" }}>
+                  {item.attachments.map((url: string, i: number) => (
+                    <Image
+                      key={i}
+                      source={{ uri: resolveAttachmentUrl(url) }}
+                      style={{ width: 200, height: 200, borderRadius: 12, backgroundColor: colors.input }}
+                      resizeMode="cover"
+                    />
+                  ))}
+                </View>
+              )}
+              {hasContent && (
+                <View style={{
+                  maxWidth: "80%",
+                  backgroundColor: isMine ? colors.dark : colors.input,
+                  borderRadius: 16,
+                  borderBottomRightRadius: isMine ? 4 : 16,
+                  borderBottomLeftRadius: isMine ? 16 : 4,
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                }}>
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: isMine ? colors.offwhite : colors.dark, lineHeight: 20 }}>{item.content}</Text>
+                </View>
+              )}
               <Text style={{ fontFamily: "Inter_400Regular", fontSize: 10, color: colors.warm, marginTop: 4 }}>
                 {new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               </Text>
@@ -170,9 +277,28 @@ export default function ChatThreadScreen() {
         }}
       />
 
+      {/* Pending image previews */}
+      {pendingImages.length > 0 && (
+        <View style={{ flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 8, backgroundColor: colors.white }}>
+          {pendingImages.map((img) => (
+            <View key={img.uri} style={{ position: "relative" }}>
+              <Image source={{ uri: img.uri }} style={{ width: 56, height: 56, borderRadius: 8, backgroundColor: colors.input }} />
+              <TouchableOpacity
+                onPress={() => removePendingImage(img.uri)}
+                style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: 10, backgroundColor: colors.dark, justifyContent: "center", alignItems: "center" }}
+              >
+                <Feather name="x" size={12} color={colors.offwhite} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
+
       {/* Input */}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 12, paddingBottom: 36, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.border }}>
-        <TouchableOpacity><Feather name="paperclip" size={20} color={colors.warm} /></TouchableOpacity>
+        <TouchableOpacity onPress={onPaperclipPress} disabled={isUploading}>
+          <Feather name="paperclip" size={20} color={isUploading ? colors.border : colors.warm} />
+        </TouchableOpacity>
         <TextInput
           value={messageText}
           onChangeText={setMessageText}
@@ -181,9 +307,10 @@ export default function ChatThreadScreen() {
           style={{ flex: 1, height: 40, backgroundColor: colors.offwhite, borderWidth: 1, borderColor: colors.border, borderRadius: 20, paddingHorizontal: 16, fontFamily: "Inter_400Regular", fontSize: 14, color: colors.dark }}
           onSubmitEditing={sendMessage}
           returnKeyType="send"
+          editable={!isUploading}
         />
-        <TouchableOpacity onPress={sendMessage} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.dark, justifyContent: "center", alignItems: "center" }}>
-          <Feather name="send" size={16} color={colors.offwhite} />
+        <TouchableOpacity onPress={sendMessage} disabled={isUploading} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: isUploading ? colors.warm : colors.dark, justifyContent: "center", alignItems: "center" }}>
+          <Feather name={isUploading ? "loader" : "send"} size={16} color={colors.offwhite} />
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>

@@ -1,12 +1,23 @@
 import { Router } from "express";
+import multer from "multer";
 import { db, notify } from "../db/index";
 import { inquiries, messages, messageReads, properties, users } from "../db/schema";
 import { eq, and, or, desc, count, notExists, ne, sql } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { z } from "zod";
 import { sendInquiryReplyEmail } from "../email";
+import { getStorage } from "../storage";
 
 export const inquiriesRouter = Router();
+
+const ALLOWED_IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"];
+const attachmentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 5 },
+  fileFilter: (_req, file, cb) => {
+    cb(null, ALLOWED_IMAGE_MIMES.includes(file.mimetype));
+  },
+});
 
 // Create inquiry (buyer contacts agent about a property)
 inquiriesRouter.post("/", requireAuth, async (req, res) => {
@@ -234,7 +245,14 @@ inquiriesRouter.get("/:id/messages", requireAuth, async (req, res) => {
 
 // Send message (REST fallback)
 inquiriesRouter.post("/:id/messages", requireAuth, async (req, res) => {
-  const schema = z.object({ content: z.string().min(1) });
+  const schema = z
+    .object({
+      content: z.string().optional(),
+      attachments: z.array(z.string()).optional(),
+    })
+    .refine((d) => (d.content && d.content.length > 0) || (d.attachments && d.attachments.length > 0), {
+      message: "Message must have content or at least one attachment",
+    });
 
   try {
     const data = schema.parse(req.body);
@@ -258,7 +276,8 @@ inquiriesRouter.post("/:id/messages", requireAuth, async (req, res) => {
       .values({
         inquiryId: req.params.id,
         senderId: req.session.userId!,
-        content: data.content,
+        content: data.content || "",
+        attachments: data.attachments,
       })
       .returning();
 
@@ -274,7 +293,7 @@ inquiriesRouter.post("/:id/messages", requireAuth, async (req, res) => {
     const [property] = await db.select({ title: properties.title }).from(properties).where(eq(properties.id, inquiry.propertyId)).limit(1);
     const senderName = sender?.name || "someone";
     const propertyTitle = property?.title || "a property";
-    const preview = data.content.slice(0, 100);
+    const preview = data.content?.slice(0, 100) || (data.attachments?.length ? `📎 ${data.attachments.length} image${data.attachments.length > 1 ? "s" : ""}` : "");
 
     await notify(recipientId, "new_message", `New message from ${senderName}`, preview, `/inquiries/${inquiry.id}`, {
       sendEmail: recipient ? () => sendInquiryReplyEmail(recipient.email, senderName, propertyTitle, preview, inquiry.id) : undefined,
@@ -287,4 +306,44 @@ inquiriesRouter.post("/:id/messages", requireAuth, async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
+
+// Upload one or more image attachments for a chat. Returns URLs the client then
+// includes in `attachments` when sending a message.
+inquiriesRouter.post(
+  "/:id/attachments",
+  requireAuth,
+  attachmentUpload.array("files", 5),
+  async (req, res) => {
+    try {
+      const [inquiry] = await db
+        .select()
+        .from(inquiries)
+        .where(eq(inquiries.id, req.params.id))
+        .limit(1);
+      if (!inquiry) return res.status(404).json({ message: "Inquiry not found" });
+      if (
+        inquiry.buyerId !== req.session.userId &&
+        inquiry.agentId !== req.session.userId
+      ) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const files = (req.files as Express.Multer.File[] | undefined) || [];
+      if (files.length === 0) {
+        return res.status(400).json({ message: "No images uploaded (jpeg/png/webp, max 10MB each)" });
+      }
+
+      const storage = await getStorage();
+      const urls: string[] = [];
+      for (const f of files) {
+        const { url } = await storage.uploadImage(f.buffer, f.originalname, f.mimetype);
+        urls.push(url);
+      }
+      res.json({ urls });
+    } catch (err) {
+      console.error("Attachment upload failed:", err);
+      res.status(500).json({ message: "Upload failed" });
+    }
+  }
+);
 

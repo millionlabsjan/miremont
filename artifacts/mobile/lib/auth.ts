@@ -91,6 +91,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: async () => {
     const { sessionCookie } = get();
     try {
+      // Best-effort: drop this device's push token before the session is invalidated.
+      const { unregisterPushAsync } = await import("./push");
+      await unregisterPushAsync();
+    } catch {}
+    try {
       await fetch(`${API_URL}/api/auth/logout`, {
         method: "POST",
         headers: sessionCookie

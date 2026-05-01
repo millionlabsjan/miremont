@@ -132,6 +132,68 @@ usersRouter.delete("/profile/avatar", requireAuth, async (req, res) => {
   res.json(profile);
 });
 
+// Register Expo push token for current device
+usersRouter.post("/push-token", requireAuth, async (req, res) => {
+  const bodySchema = z.object({
+    token: z.string().min(1),
+    platform: z.enum(["ios", "android"]),
+  });
+
+  try {
+    const { token, platform } = bodySchema.parse(req.body);
+
+    const [user] = await db
+      .select({ pushTokens: users.pushTokens })
+      .from(users)
+      .where(eq(users.id, req.session.userId!))
+      .limit(1);
+
+    const existing = user?.pushTokens || [];
+    const filtered = existing.filter((t) => t.token !== token);
+    filtered.push({ token, platform, lastSeenAt: new Date().toISOString() });
+
+    await db
+      .update(users)
+      .set({ pushTokens: filtered, updatedAt: new Date() })
+      .where(eq(users.id, req.session.userId!));
+
+    res.json({ ok: true });
+  } catch (err) {
+    if (err instanceof z.ZodError)
+      return res.status(400).json({ message: err.errors[0].message });
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// Remove a push token (e.g. on logout)
+usersRouter.delete("/push-token", requireAuth, async (req, res) => {
+  const bodySchema = z.object({ token: z.string().min(1) });
+
+  try {
+    const { token } = bodySchema.parse(req.body);
+
+    const [user] = await db
+      .select({ pushTokens: users.pushTokens })
+      .from(users)
+      .where(eq(users.id, req.session.userId!))
+      .limit(1);
+
+    const existing = user?.pushTokens || [];
+    const filtered = existing.filter((t) => t.token !== token);
+
+    await db
+      .update(users)
+      .set({ pushTokens: filtered, updatedAt: new Date() })
+      .where(eq(users.id, req.session.userId!));
+
+    res.json({ ok: true });
+  } catch (err) {
+    if (err instanceof z.ZodError)
+      return res.status(400).json({ message: err.errors[0].message });
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 // Change password
 usersRouter.put("/password", requireAuth, async (req, res) => {
   const schema = z.object({

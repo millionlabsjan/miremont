@@ -1,6 +1,7 @@
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Image } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
+import { Feather } from "@expo/vector-icons";
 import { apiRequest } from "../../lib/api";
 import { colors } from "../../constants/theme";
 
@@ -23,7 +24,9 @@ export default function ChatScreen() {
             placeholderTextColor={colors.warm}
             style={{ height: 44, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 40, fontFamily: "Inter_400Regular", fontSize: 14, color: colors.dark }}
           />
-          <Text style={{ position: "absolute", left: 12, top: 12, fontSize: 16, color: colors.warm }}>🔍</Text>
+          <View style={{ position: "absolute", left: 14, top: 14 }}>
+            <Feather name="search" size={16} color={colors.warm} />
+          </View>
         </View>
       </View>
 

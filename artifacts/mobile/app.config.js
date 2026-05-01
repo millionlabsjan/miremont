@@ -65,6 +65,17 @@ module.exports = ({ config }) => ({
           photosPermission: "Allow The Property Catalogue to access your photos to set your profile picture.",
         },
       ],
+      [
+        "expo-notifications",
+        {
+          color: "#1c1c1c",
+        },
+      ],
     ],
+    extra: {
+      eas: {
+        projectId: "757be5c7-50d9-4646-ae25-8ed14b927249",
+      },
+    },
   },
 });
