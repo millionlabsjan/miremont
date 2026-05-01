@@ -107,6 +107,30 @@ app.use("/api/notifications", notificationsRouter);
 const wss = new WebSocketServer({ server, path: "/ws" });
 setupWebSocket(wss);
 
+// Global API error handler — keeps the dev server alive on unexpected
+// route errors (e.g. invalid input that escapes route-level validation)
+// instead of crashing the whole process.
+app.use(
+  "/api",
+  (
+    err: unknown,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction
+  ) => {
+    console.error("[api error]", err);
+    if (res.headersSent) return;
+    res.status(500).json({ message: "Internal server error" });
+  }
+);
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException]", err);
+});
+
 const PORT = parseInt(process.env.PORT || "3000");
 
 // Serve frontend
