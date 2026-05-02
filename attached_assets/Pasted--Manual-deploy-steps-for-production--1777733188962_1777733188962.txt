@@ -1,0 +1,46 @@
+ Manual deploy steps for production                                                                                                                                                                           
+                                                                                                                                                                                                               
+  Run schema SQL FIRST, before restarting the server. The new routes read columns that don't exist yet — restart-before-migrate will throw 500s.                                                               
+                                                                                                                                                                                                             
+  1. Schema migrations (run in production DB shell)
+                                          
+  -- notifications: new columns + partial digest index                                                                                                                                                         
+  ALTER TABLE notifications                                                                                                                                                                                    
+    ADD COLUMN IF NOT EXISTS category varchar(20) NOT NULL DEFAULT 'realtimeOnly',                                                                                                                             
+    ADD COLUMN IF NOT EXISTS metadata jsonb,                                                                                                                                                                   
+    ADD COLUMN IF NOT EXISTS email_sent_at timestamp;                                                                                                                                                          
+                                              
+  CREATE INDEX IF NOT EXISTS notifications_digest_idx                                                                                                                                                          
+    ON notifications (user_id, created_at)                                                                                                                                                                   
+    WHERE is_read = false AND email_sent_at IS NULL AND category = 'digestEligible';                                                                                                                           
+                                                                                                                                                                                                             
+  -- saved_searches: derived columns + price index for the inverse matcher                                                                                                                                     
+  ALTER TABLE saved_searches                                                                                                                                                                                   
+    ADD COLUMN IF NOT EXISTS min_price_usd numeric(15,2),
+    ADD COLUMN IF NOT EXISTS max_price_usd numeric(15,2),                                                                                                                                                      
+    ADD COLUMN IF NOT EXISTS bedrooms_min integer;                                                                                                                                                           
+                                                                                                                                                                                                               
+  CREATE INDEX IF NOT EXISTS saved_searches_price_idx                                                                                                                                                          
+    ON saved_searches (min_price_usd, max_price_usd);
+                                                                                                                                                                                                               
+  -- system_state: new single-row key/value table for cron bookkeeping                                                                                                                                       
+  CREATE TABLE IF NOT EXISTS system_state (                                                                                                                                                                    
+    key varchar(100) PRIMARY KEY,                                                                                                                                                                            
+    value jsonb,                                                                                                                                                                                               
+    updated_at timestamp NOT NULL DEFAULT now()
+  );                                                                                                                                                                                                           
+                                                                                                                                                                                                               
+  Or as a one-liner from the Replit shell:    
+  psql "$DATABASE_URL" -c "ALTER TABLE notifications ADD COLUMN IF NOT EXISTS category varchar(20) NOT NULL DEFAULT 'realtimeOnly', ADD COLUMN IF NOT EXISTS metadata jsonb, ADD COLUMN IF NOT EXISTS          
+  email_sent_at timestamp;"                                                                                                                                                                                  
+  psql "$DATABASE_URL" -c "CREATE INDEX IF NOT EXISTS notifications_digest_idx ON notifications (user_id, created_at) WHERE is_read = false AND email_sent_at IS NULL AND category = 'digestEligible';"        
+  psql "$DATABASE_URL" -c "ALTER TABLE saved_searches ADD COLUMN IF NOT EXISTS min_price_usd numeric(15,2), ADD COLUMN IF NOT EXISTS max_price_usd numeric(15,2), ADD COLUMN IF NOT EXISTS bedrooms_min 
+  integer;"                                                                                                                                                                                                    
+  psql "$DATABASE_URL" -c "CREATE INDEX IF NOT EXISTS saved_searches_price_idx ON saved_searches (min_price_usd, max_price_usd);"                                                                              
+  psql "$DATABASE_URL" -c "CREATE TABLE IF NOT EXISTS system_state (key varchar(100) PRIMARY KEY, value jsonb, updated_at timestamp NOT NULL DEFAULT now());"
+                                                                                                                                                                                                               
+  2. Pull + restart                                                                                                                                                                                            
+                                                                                                                                                                                                               
+  git pull origin main                                                                                                                                                                                         
+  # No pnpm install needed — no dependency changes.                                                                                                                                                            
+  # Restart the API process (Replit auto-restarts on git pull, otherwise click "Run").            
