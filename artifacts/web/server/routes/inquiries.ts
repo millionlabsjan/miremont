@@ -2,10 +2,9 @@ import { Router } from "express";
 import multer from "multer";
 import { db, notify } from "../db/index";
 import { inquiries, messages, messageReads, properties, users } from "../db/schema";
-import { eq, and, or, desc, count, notExists, ne, sql } from "drizzle-orm";
+import { eq, and, or, desc, count, notExists, ne, sql, inArray } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { z } from "zod";
-import { sendInquiryReplyEmail } from "../email";
 import { getStorage } from "../storage";
 
 export const inquiriesRouter = Router();
@@ -90,7 +89,11 @@ inquiriesRouter.post("/", requireAuth, async (req, res) => {
 
     // Notify the agent about the new inquiry
     const [buyer] = await db.select({ name: users.name }).from(users).where(eq(users.id, req.session.userId!)).limit(1);
-    await notify(property.userId, "new_inquiry", `New inquiry on ${property.title}`, `${buyer?.name || "A buyer"} is interested in your property`, `/inquiries/${inquiry.id}`);
+    await notify(property.userId, "new_inquiry", `New inquiry on ${property.title}`, {
+      body: `${buyer?.name || "A buyer"} is interested in your property`,
+      link: `/inquiries/${inquiry.id}`,
+      metadata: { inquiryId: inquiry.id, propertyTitle: property.title, buyerName: buyer?.name },
+    });
 
     res.status(201).json({ inquiry, message });
   } catch (err) {
@@ -187,7 +190,7 @@ inquiriesRouter.post("/messages/mark-read", requireAuth, async (req, res) => {
     // Also update legacy isRead for web client compat
     await db.update(messages).set({ isRead: true }).where(
       and(
-        sql`${messages.id} = ANY(${messageIds}::uuid[])`,
+        inArray(messages.id, messageIds),
         ne(messages.senderId, userId)
       )
     );
@@ -196,6 +199,7 @@ inquiriesRouter.post("/messages/mark-read", requireAuth, async (req, res) => {
   } catch (err) {
     if (err instanceof z.ZodError)
       return res.status(400).json({ message: err.errors[0].message });
+    console.error("mark-read failed:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -243,7 +247,24 @@ inquiriesRouter.get("/:id/messages", requireAuth, async (req, res) => {
   }
 
   const msgs = await db
-    .select()
+    .select({
+      id: messages.id,
+      inquiryId: messages.inquiryId,
+      senderId: messages.senderId,
+      content: messages.content,
+      attachments: messages.attachments,
+      isRead: messages.isRead,
+      createdAt: messages.createdAt,
+      // True when sender is me (own messages) OR there's a row in messageReads for this user.
+      isReadByMe: sql<boolean>`(
+        ${messages.senderId} = ${userId}::uuid
+        OR EXISTS (
+          SELECT 1 FROM ${messageReads}
+          WHERE ${messageReads.messageId} = ${messages.id}
+          AND ${messageReads.userId} = ${userId}::uuid
+        )
+      )`,
+    })
     .from(messages)
     .where(eq(messages.inquiryId, req.params.id))
     .orderBy(messages.createdAt);
@@ -294,19 +315,8 @@ inquiriesRouter.post("/:id/messages", requireAuth, async (req, res) => {
       .set({ updatedAt: new Date() })
       .where(eq(inquiries.id, req.params.id));
 
-    // Notify the other party
-    const recipientId = inquiry.buyerId === req.session.userId ? inquiry.agentId : inquiry.buyerId;
-    const [sender] = await db.select({ name: users.name }).from(users).where(eq(users.id, req.session.userId!)).limit(1);
-    const [recipient] = await db.select({ email: users.email }).from(users).where(eq(users.id, recipientId)).limit(1);
-    const [property] = await db.select({ title: properties.title }).from(properties).where(eq(properties.id, inquiry.propertyId)).limit(1);
-    const senderName = sender?.name || "someone";
-    const propertyTitle = property?.title || "a property";
-    const preview = data.content?.slice(0, 100) || (data.attachments?.length ? `📎 ${data.attachments.length} image${data.attachments.length > 1 ? "s" : ""}` : "");
-
-    await notify(recipientId, "new_message", `New message from ${senderName}`, preview, `/inquiries/${inquiry.id}`, {
-      sendEmail: recipient ? () => sendInquiryReplyEmail(recipient.email, senderName, propertyTitle, preview, inquiry.id) : undefined,
-    });
-
+    // Chat replies are surfaced by the chat tab badge + WebSocket — intentionally
+    // no bell notification, push, or digest entry to avoid duplicate signals.
     res.status(201).json(message);
   } catch (err) {
     if (err instanceof z.ZodError)

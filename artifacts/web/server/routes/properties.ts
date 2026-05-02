@@ -24,7 +24,7 @@ import { requireAuth, requireRole } from "../middleware/auth";
 import { z } from "zod";
 import { MIN_PROPERTY_PRICE_USD } from "../../shared/constants";
 import { getRates, convert } from "../services/exchangeRates";
-import { sendPropertyUpdateEmail } from "../email";
+import { fanOutSavedSearchMatches } from "../savedSearchInverseMatcher";
 
 export const propertiesRouter = Router();
 
@@ -264,7 +264,14 @@ propertiesRouter.post("/", requireRole("agent"), async (req, res) => {
 
     // Notify all admins about new property
     const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, "admin"));
-    await Promise.all(admins.map((a) => notify(a.id, "new_property", `New property listed`, `${property.title} in ${property.city}, ${property.country}`)));
+    await Promise.all(admins.map((a) => notify(a.id, "new_property", `New property listed`, {
+      body: `${property.title} in ${property.city}, ${property.country}`,
+      link: `/properties/${property.id}`,
+      metadata: { propertyId: property.id, title: property.title },
+    })));
+
+    // Real-time saved-search match fan-out (fire-and-forget)
+    void fanOutSavedSearchMatches(property);
 
     res.status(201).json(property);
   } catch (err) {
@@ -326,29 +333,56 @@ propertiesRouter.put("/:id", requireRole("agent"), async (req, res) => {
   // Notify users who favorited this property about price/status changes
   const priceChanged = updateData.price && String(updateData.price) !== String(existing.price);
   const statusChanged = updateData.status && updateData.status !== existing.status;
+  const oldPriceNum = Number(existing.price);
+  const newPriceNum = Number(updated.price);
+  const isDrop = priceChanged && newPriceNum < oldPriceNum;
 
   if (priceChanged || statusChanged) {
+    const sym = updated.currency === "GBP" ? "£" : updated.currency === "USD" ? "$" : "€";
     const changes: string[] = [];
     if (priceChanged) {
-      const sym = updated.currency === "GBP" ? "£" : updated.currency === "USD" ? "$" : "€";
-      changes.push(`Price changed from ${sym}${Number(existing.price).toLocaleString()} to ${sym}${Number(updated.price).toLocaleString()}`);
+      changes.push(`${isDrop ? "Price drop" : "Price changed"} from ${sym}${oldPriceNum.toLocaleString()} to ${sym}${newPriceNum.toLocaleString()}`);
     }
     if (statusChanged) {
       changes.push(`Status changed to ${updated.status}`);
     }
     const changeDesc = changes.join(". ");
 
+    const type = isDrop ? "price_drop" : "property_update";
+    const titlePrefix = isDrop ? "Price drop on" : "Update on";
+    const pctChange = priceChanged && oldPriceNum > 0 ? Math.round(((newPriceNum - oldPriceNum) / oldPriceNum) * 100) : null;
+
     const favUsers = await db
-      .select({ userId: favorites.userId, email: users.email })
+      .select({ userId: favorites.userId })
       .from(favorites)
-      .innerJoin(users, eq(users.id, favorites.userId))
       .where(eq(favorites.propertyId, req.params.id));
 
     for (const fav of favUsers) {
-      notify(fav.userId, "property_update", `Update on ${updated.title}`, changeDesc, `/properties/${updated.id}`, {
-        sendEmail: () => sendPropertyUpdateEmail(fav.email, updated.title, changeDesc, updated.id),
+      notify(fav.userId, type, `${titlePrefix} ${updated.title}`, {
+        body: changeDesc,
+        link: `/properties/${updated.id}`,
+        metadata: {
+          propertyId: updated.id,
+          propertyTitle: updated.title,
+          oldPrice: priceChanged ? oldPriceNum : undefined,
+          newPrice: priceChanged ? newPriceNum : undefined,
+          currency: updated.currency,
+          pctChange,
+          newStatus: statusChanged ? updated.status : undefined,
+        },
       });
     }
+  }
+
+  // Real-time saved-search re-fan-out when fields that affect matching change
+  const locationChanged =
+    (updateData.latitude && String(updateData.latitude) !== String(existing.latitude)) ||
+    (updateData.longitude && String(updateData.longitude) !== String(existing.longitude)) ||
+    (updateData.city && updateData.city !== existing.city) ||
+    (updateData.country && updateData.country !== existing.country);
+  const becameActive = statusChanged && updated.status === "active";
+  if (priceChanged || becameActive || locationChanged) {
+    void fanOutSavedSearchMatches(updated);
   }
 
   res.json(updated);

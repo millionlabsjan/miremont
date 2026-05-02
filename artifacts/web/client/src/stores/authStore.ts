@@ -11,6 +11,7 @@ export interface User {
   preferredCurrency?: string | null;
   status?: string;
   createdAt?: string;
+  notificationPrefs?: Record<string, boolean> | null;
 }
 
 interface AuthState {

@@ -6,6 +6,7 @@ import * as Notifications from "expo-notifications";
 import { queryClient } from "../lib/queryClient";
 import { useAuthStore } from "../lib/auth";
 import { registerForPushAsync } from "../lib/push";
+import { notificationRoute } from "../lib/notificationRoute";
 import {
   useFonts,
   Inter_400Regular,
@@ -55,18 +56,8 @@ export default function RootLayout() {
       const data = response.notification.request.content.data as
         | { link?: string; type?: string }
         | undefined;
-      const link = data?.link;
-      if (!link) return;
-      // Server-emitted links look like "/inquiries/<id>" or "/properties/<id>".
-      const inquiryMatch = link.match(/^\/inquiries\/([^/]+)/);
-      if (inquiryMatch) {
-        router.push(`/chat/${inquiryMatch[1]}`);
-        return;
-      }
-      const propertyMatch = link.match(/^\/properties\/([^/]+)/);
-      if (propertyMatch) {
-        router.push(`/property/${propertyMatch[1]}`);
-      }
+      const route = notificationRoute(data?.link);
+      if (route) router.push(route as any);
     });
     return () => sub.remove();
   }, []);

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import { clsx } from "clsx";
+import NotificationBell from "../NotificationBell";
 
 interface NavItem {
   label: string;
@@ -126,7 +127,7 @@ export default function Sidebar() {
               </span>
             )}
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-brand-offwhite truncate">
               {user?.name}
             </p>
@@ -136,6 +137,7 @@ export default function Sidebar() {
                 : user?.role}
             </p>
           </div>
+          <NotificationBell />
         </div>
         <button
           onClick={logout}

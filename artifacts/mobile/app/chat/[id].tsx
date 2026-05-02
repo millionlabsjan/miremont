@@ -20,6 +20,10 @@ export default function ChatThreadScreen() {
   const [isUploading, setIsUploading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const initialScrollDoneRef = useRef(false);
+  const lastSeenMsgCountRef = useRef(0);
+  const [isNearBottom, setIsNearBottom] = useState(true);
+  const [unreadBelow, setUnreadBelow] = useState(0);
 
   const resolveAttachmentUrl = (url: string, cacheBuster?: string | number) => {
     // Rewrite /uploads/chat/* to /api/uploads/chat/* on mobile. Replit's edge
@@ -132,19 +136,17 @@ export default function ChatThreadScreen() {
   const markRead = useCallback(async (msgList: any[]) => {
     if (!user) return;
     const unreadIds = msgList
-      .filter((m: any) => m.senderId !== user.id)
+      .filter((m: any) => m.senderId !== user.id && m.isReadByMe === false)
       .map((m: any) => m.id);
     if (unreadIds.length === 0) return;
 
-    // Optimistic: invalidate conversations immediately for badge update
     try {
       await apiRequest("/api/inquiries/messages/mark-read", {
         method: "POST",
         body: JSON.stringify({ messageIds: unreadIds }),
       });
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
 
-      // Also notify via WebSocket for instant feedback to other party
+      // Notify the other party via WebSocket so their UI updates without polling.
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({
           type: "mark_read",
@@ -153,14 +155,59 @@ export default function ChatThreadScreen() {
         }));
       }
     } catch {}
-  }, [user, id, queryClient]);
+  }, [user, id]);
 
-  // Mark read when messages load or update
+  // On entry: optimistically clear the chat-list badge for this thread so the
+  // user sees the [N] disappear instantly when they tap in. The server PUT below
+  // confirms the write; the next conversations refetch will agree.
   useEffect(() => {
-    if (msgs.length > 0) {
-      markRead(msgs);
+    queryClient.setQueryData<any[] | undefined>(["conversations"], (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c));
+    });
+  }, [id, queryClient]);
+
+  // Mark read when messages load or new ones arrive.
+  useEffect(() => {
+    if (msgs.length > 0) markRead(msgs);
+  }, [msgs.length, markRead]);
+
+  // New-message handling: if the user is reading near the bottom, auto-scroll
+  // them to the latest message (WhatsApp-style follow). If they've scrolled up,
+  // don't yank them — increment the floating-button counter instead so they
+  // can opt to jump back down.
+  useEffect(() => {
+    if (msgs.length === 0) return;
+    if (!initialScrollDoneRef.current) {
+      lastSeenMsgCountRef.current = msgs.length;
+      return;
     }
-  }, [msgs.length]);
+    const newCount = msgs.length - lastSeenMsgCountRef.current;
+    if (newCount > 0) {
+      if (isNearBottom) {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      } else {
+        const newFromOthers = msgs
+          .slice(-newCount)
+          .filter((m: any) => m.senderId !== user?.id).length;
+        if (newFromOthers > 0) setUnreadBelow((prev) => prev + newFromOthers);
+      }
+    }
+    lastSeenMsgCountRef.current = msgs.length;
+  }, [msgs.length, isNearBottom, user?.id]);
+
+  const handleScroll = useCallback((e: any) => {
+    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+    const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    const near = distanceFromBottom < 80;
+    setIsNearBottom(near);
+    if (near) setUnreadBelow(0);
+  }, []);
+
+  const jumpToLatest = useCallback(() => {
+    flatListRef.current?.scrollToEnd({ animated: true });
+    setUnreadBelow(0);
+  }, []);
 
   // WebSocket connection
   useEffect(() => {
@@ -262,8 +309,25 @@ export default function ChatThreadScreen() {
         ref={flatListRef}
         data={msgs}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: 16, gap: 8 }}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingTop: 16, paddingHorizontal: 16, paddingBottom: 24, gap: 8 }}
+        onScroll={handleScroll}
+        scrollEventThrottle={100}
+        onContentSizeChange={() => {
+          // First layout (and any subsequent reflow before the user has scrolled)
+          // pins us at the bottom — the latest message is always in view. Once
+          // the user has scrolled away, the message-count effect above takes over
+          // and only re-scrolls on genuinely new arrivals.
+          if (!initialScrollDoneRef.current) {
+            flatListRef.current?.scrollToEnd({ animated: false });
+            // Mark done on the *next* tick — this lets re-measures from images
+            // that load shortly after mount also keep us pinned to the bottom,
+            // instead of stranding the user mid-list.
+            setTimeout(() => {
+              initialScrollDoneRef.current = true;
+            }, 600);
+          }
+        }}
         renderItem={({ item }) => {
           const isMine = item.senderId === user?.id;
           const hasAttachments = Array.isArray(item.attachments) && item.attachments.length > 0;
@@ -308,6 +372,38 @@ export default function ChatThreadScreen() {
           );
         }}
       />
+
+      {/* Jump-to-latest floating chip — only when scrolled up AND new messages
+          arrived from the other party while you were reading history. */}
+      {!isNearBottom && unreadBelow > 0 && (
+        <TouchableOpacity
+          onPress={jumpToLatest}
+          activeOpacity={0.85}
+          style={{
+            position: "absolute",
+            bottom: 96,
+            right: 16,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            paddingLeft: 12,
+            paddingRight: 14,
+            paddingVertical: 10,
+            backgroundColor: colors.dark,
+            borderRadius: 22,
+            shadowColor: "#000",
+            shadowOpacity: 0.18,
+            shadowRadius: 8,
+            shadowOffset: { width: 0, height: 4 },
+            elevation: 6,
+          }}
+        >
+          <Feather name="chevron-down" size={16} color={colors.offwhite} />
+          <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 13, color: colors.offwhite }}>
+            {unreadBelow} new
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {/* Pending image previews */}
       {pendingImages.length > 0 && (

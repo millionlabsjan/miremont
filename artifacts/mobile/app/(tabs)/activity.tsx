@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { View, Text, ScrollView, TouchableOpacity, Image, Dimensions } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
@@ -6,6 +7,9 @@ import { useAuthStore } from "../../lib/auth";
 import { colors } from "../../constants/theme";
 import { formatPrice } from "../../lib/formatPrice";
 import { useRates } from "../../lib/useRates";
+import { notificationRoute } from "../../lib/notificationRoute";
+
+const COLLAPSED_COUNT = 5;
 
 function timeAgo(date: string) {
   const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
@@ -36,7 +40,7 @@ export default function ActivityScreen() {
 
   const { data: notifData } = useQuery({
     queryKey: ["notifications"],
-    queryFn: () => apiRequest("/api/notifications?limit=10"),
+    queryFn: () => apiRequest("/api/notifications?limit=50"),
   });
 
   const queryClient = useQueryClient();
@@ -44,10 +48,26 @@ export default function ActivityScreen() {
   const searches = Array.isArray(searchData) ? searchData : [];
   const recentActivity = notifData?.notifications ?? [];
   const unreadCount = notifData?.unread ?? 0;
+  const [expanded, setExpanded] = useState(false);
+  const visibleActivity = expanded ? recentActivity : recentActivity.slice(0, COLLAPSED_COUNT);
+  const hiddenCount = recentActivity.length - COLLAPSED_COUNT;
 
   const markAsRead = async (id: string) => {
     await apiRequest(`/api/notifications/${id}/read`, { method: "PUT" });
     queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    queryClient.invalidateQueries({ queryKey: ["notifications-unread-count"] });
+  };
+
+  const markAllRead = async () => {
+    await apiRequest("/api/notifications/read-all", { method: "PUT" });
+    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    queryClient.invalidateQueries({ queryKey: ["notifications-unread-count"] });
+  };
+
+  const openNotification = (item: any) => {
+    if (!item.isRead) void markAsRead(item.id);
+    const route = notificationRoute(item.link);
+    if (route) router.push(route as any);
   };
 
   return (
@@ -99,20 +119,39 @@ export default function ActivityScreen() {
         </View>
 
         {/* Recent activity */}
-        <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: colors.dark, marginBottom: 12 }}>Recent activity</Text>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: colors.dark }}>Recent activity</Text>
+          {unreadCount > 0 && (
+            <TouchableOpacity onPress={markAllRead}>
+              <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: colors.accent }}>Mark all read</Text>
+            </TouchableOpacity>
+          )}
+        </View>
         {recentActivity.length === 0 ? (
           <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.warm }}>No recent activity</Text>
         ) : (
-          recentActivity.map((item: any) => (
-            <TouchableOpacity key={item.id} onPress={() => !item.isRead && markAsRead(item.id)} style={{ flexDirection: "row", gap: 12, marginBottom: 16 }}>
-              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: item.isRead ? colors.warm : colors.accent, marginTop: 6 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontFamily: item.isRead ? "Inter_400Regular" : "Inter_600SemiBold", fontSize: 14, color: colors.dark }}>{item.title}</Text>
-                {item.body && <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: colors.warm, marginTop: 1 }}>{item.body}</Text>}
-                <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm, marginTop: 2 }}>{timeAgo(item.createdAt)}</Text>
-              </View>
-            </TouchableOpacity>
-          ))
+          <>
+            {visibleActivity.map((item: any) => (
+              <TouchableOpacity key={item.id} onPress={() => openNotification(item)} style={{ flexDirection: "row", gap: 12, marginBottom: 16 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: item.isRead ? colors.warm : colors.accent, marginTop: 6 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: item.isRead ? "Inter_400Regular" : "Inter_600SemiBold", fontSize: 14, color: colors.dark }}>{item.title}</Text>
+                  {item.body && <Text style={{ fontFamily: "Inter_400Regular", fontSize: 13, color: colors.warm, marginTop: 1 }}>{item.body}</Text>}
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm, marginTop: 2 }}>{timeAgo(item.createdAt)}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+            {hiddenCount > 0 && (
+              <TouchableOpacity
+                onPress={() => setExpanded((v) => !v)}
+                style={{ alignSelf: "flex-start", paddingVertical: 4, marginTop: 4 }}
+              >
+                <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: colors.accent }}>
+                  {expanded ? "Show less" : `Show ${hiddenCount} more`}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </>
         )}
 
         {/* Saved searches */}

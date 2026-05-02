@@ -69,7 +69,10 @@ authRouter.post("/signup", async (req, res) => {
 
     // Notify all admins about new signup
     const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, "admin"));
-    await Promise.all(admins.map((a) => notify(a.id, "new_user", `New ${user.role} signed up`, `${user.name} (${user.email}) joined the platform`)));
+    await Promise.all(admins.map((a) => notify(a.id, "new_user", `New ${user.role} signed up`, {
+      body: `${user.name} (${user.email}) joined the platform`,
+      metadata: { signupUserId: user.id, name: user.name, email: user.email, role: user.role },
+    })));
 
     req.session.userId = user.id;
     req.session.role = user.role;

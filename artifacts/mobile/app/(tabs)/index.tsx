@@ -6,6 +6,7 @@ import { useAuthStore } from "../../lib/auth";
 import { colors } from "../../constants/theme";
 import { formatPrice } from "../../lib/formatPrice";
 import { useRates } from "../../lib/useRates";
+import { useUnreadCount } from "../../lib/useUnreadCount";
 import { Feather, Ionicons } from "@expo/vector-icons";
 
 const { width } = Dimensions.get("window");
@@ -15,6 +16,7 @@ export default function HomeScreen() {
   const user = useAuthStore((s) => s.user);
   const rates = useRates();
   const userCurrency = user?.preferredCurrency;
+  const unreadCount = useUnreadCount();
 
   const queryClient = useQueryClient();
 
@@ -50,8 +52,33 @@ export default function HomeScreen() {
         <Text style={{ fontFamily: "PlayfairDisplay_600SemiBold", fontSize: 22, color: colors.dark }}>
           Good morning, {displayName}
         </Text>
-        <TouchableOpacity style={{ width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: colors.border, justifyContent: "center", alignItems: "center" }}>
+        <TouchableOpacity
+          onPress={() => router.push("/(tabs)/activity")}
+          style={{ width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: colors.border, justifyContent: "center", alignItems: "center" }}
+        >
           <Feather name="bell" size={18} color={colors.warm} />
+          {unreadCount > 0 && (
+            <View
+              style={{
+                position: "absolute",
+                top: -4,
+                right: -4,
+                minWidth: 18,
+                height: 18,
+                paddingHorizontal: 5,
+                borderRadius: 9,
+                backgroundColor: "#c44b3a",
+                justifyContent: "center",
+                alignItems: "center",
+                borderWidth: 2,
+                borderColor: colors.offwhite,
+              }}
+            >
+              <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 10, color: colors.white }}>
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
 

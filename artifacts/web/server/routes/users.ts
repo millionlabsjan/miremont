@@ -414,7 +414,11 @@ usersRouter.put("/:id/subscription", requireRole("admin"), async (req, res) => {
       .returning();
 
     // Notify the user
-    await notify(req.params.id, "plan_assigned", `Custom plan assigned: ${data.customPlanName}`, `You now have ${data.listingSlots} listing slots.`);
+    await notify(req.params.id, "plan_assigned", `Custom plan assigned: ${data.customPlanName}`, {
+      body: `You now have ${data.listingSlots} listing slots.`,
+      link: "/account",
+      metadata: { planName: data.customPlanName, listingSlots: data.listingSlots },
+    });
 
     res.status(201).json(created);
   } catch (err) {
@@ -439,7 +443,10 @@ usersRouter.delete("/:id/subscription", requireRole("admin"), async (req, res) =
   }
 
   await db.delete(userSubscriptions).where(eq(userSubscriptions.id, existing.id));
-  await notify(req.params.id, "plan_removed", "Custom plan removed", "Your custom plan has been removed by an administrator.");
+  await notify(req.params.id, "plan_removed", "Custom plan removed", {
+    body: "Your custom plan has been removed by an administrator.",
+    link: "/account",
+  });
   res.json({ message: "Subscription removed" });
 });
 

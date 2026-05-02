@@ -45,7 +45,7 @@ function BuyerAccount() {
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
-  const defaultNotifs = { savedSearches: true, inquiryReplies: true, propertyUpdates: true, newsletter: false };
+  const defaultNotifs = { savedSearches: true, inquiryReplies: true, propertyUpdates: true, newsletter: false, digestEnabled: true, inactiveSummary: true };
   const [notifs, setNotifs] = useState({ ...defaultNotifs, ...user?.notificationPrefs });
   const initials = user?.name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) || "?";
 
@@ -237,6 +237,8 @@ function BuyerAccount() {
           { key: "inquiryReplies", label: "Inquiry replies", desc: "Get notified when agents respond" },
           { key: "propertyUpdates", label: "Property updates", desc: "Stay informed on price updates or status changes" },
           { key: "newsletter", label: "Newsletter", desc: "Receive curated property news" },
+          { key: "digestEnabled", label: "Daily email summary", desc: "Bundles unread bell items you haven't seen yet" },
+          { key: "inactiveSummary", label: "Weekly catch-up email", desc: "Sent only if you've been away from the app for a week" },
         ].map((item) => (
           <View key={item.key} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <View style={{ flex: 1, marginRight: 16 }}><Text style={{ fontFamily: "Inter_500Medium", fontSize: 14, color: colors.dark }}>{item.label}</Text><Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm, marginTop: 2 }}>{item.desc}</Text></View>

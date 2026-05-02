@@ -13,7 +13,7 @@ import {
   index,
   primaryKey,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 // Enums
 export const roleEnum = pgEnum("role", ["buyer", "agent", "admin"]);
@@ -67,6 +67,8 @@ export const users = pgTable(
       inquiryReplies?: boolean;
       propertyUpdates?: boolean;
       newsletter?: boolean;
+      digestEnabled?: boolean;
+      inactiveSummary?: boolean;
     }>(),
     pushTokens: jsonb("push_tokens").$type<
       Array<{ token: string; platform: "ios" | "android"; lastSeenAt: string }>
@@ -200,26 +202,33 @@ export const favorites = pgTable(
 );
 
 // Saved Searches
-export const savedSearches = pgTable("saved_searches", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  name: varchar("name", { length: 255 }),
-  filters: jsonb("filters").$type<{
-    location?: string;
-    lat?: number;
-    lng?: number;
-    radius?: number;
-    minPrice?: number;
-    maxPrice?: number;
-    categories?: string[];
-    bedrooms?: number;
-    bathrooms?: number;
-  }>(),
-  lastNotifiedAt: timestamp("last_notified_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const savedSearches = pgTable(
+  "saved_searches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 255 }),
+    filters: jsonb("filters").$type<{
+      location?: string;
+      lat?: number;
+      lng?: number;
+      radius?: number;
+      minPrice?: number;
+      maxPrice?: number;
+      categories?: string[];
+      bedrooms?: number;
+      bathrooms?: number;
+    }>(),
+    minPriceUsd: decimal("min_price_usd", { precision: 15, scale: 2 }),
+    maxPriceUsd: decimal("max_price_usd", { precision: 15, scale: 2 }),
+    bedroomsMin: integer("bedrooms_min"),
+    lastNotifiedAt: timestamp("last_notified_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("saved_searches_price_idx").on(t.minPriceUsd, t.maxPriceUsd)]
+);
 
 // Inquiries (conversation containers)
 export const inquiries = pgTable(
@@ -318,14 +327,33 @@ export const notifications = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     type: varchar("type", { length: 50 }).notNull(),
+    category: varchar("category", { length: 20 })
+      .notNull()
+      .default("realtimeOnly"),
     title: varchar("title", { length: 255 }).notNull(),
     body: text("body"),
     link: text("link"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     isRead: boolean("is_read").default(false),
+    emailSentAt: timestamp("email_sent_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (t) => [index("notifications_user_idx").on(t.userId, t.isRead, t.createdAt)]
+  (t) => [
+    index("notifications_user_idx").on(t.userId, t.isRead, t.createdAt),
+    index("notifications_digest_idx")
+      .on(t.userId, t.createdAt)
+      .where(
+        sql`is_read = false AND email_sent_at IS NULL AND category = 'digestEligible'`
+      ),
+  ]
 );
+
+// System State (single-row key/value store for cron bookkeeping)
+export const systemState = pgTable("system_state", {
+  key: varchar("key", { length: 100 }).primaryKey(),
+  value: jsonb("value").$type<Record<string, unknown>>(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
 
 // Newsletter Subscriptions
 export const newsletterSubscriptions = pgTable("newsletter_subscriptions", {

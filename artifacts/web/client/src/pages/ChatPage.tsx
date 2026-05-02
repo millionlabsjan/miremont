@@ -23,6 +23,7 @@ interface Message {
   attachments?: string[] | null;
   createdAt: string;
   isRead: boolean;
+  isReadByMe?: boolean;
 }
 
 export default function ChatPage() {
@@ -105,14 +106,39 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Join inquiry when selected
+  // Join inquiry when selected. Also clear the chat-list badge optimistically so
+  // the unread pip disappears the instant the user clicks in.
   useEffect(() => {
-    if (activeConvo && wsRef.current?.readyState === WebSocket.OPEN) {
+    if (!activeConvo) return;
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(
         JSON.stringify({ type: "join_inquiry", inquiryId: activeConvo })
       );
     }
-  }, [activeConvo]);
+    queryClient.setQueryData<Conversation[] | undefined>(["conversations"], (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map((c) => (c.id === activeConvo ? { ...c, unreadCount: 0 } : c));
+    });
+  }, [activeConvo, queryClient]);
+
+  // Mark unread messages from the other party as read whenever the visible list
+  // changes. Server is idempotent (onConflictDoNothing), so re-sending is safe.
+  useEffect(() => {
+    if (!activeConvo || !user || !Array.isArray(messages)) return;
+    const unreadIds = (messages as Message[])
+      .filter((m) => m.senderId !== user.id && m.isReadByMe === false)
+      .map((m) => m.id);
+    if (unreadIds.length === 0) return;
+    apiRequest("/api/inquiries/messages/mark-read", {
+      method: "POST",
+      body: JSON.stringify({ messageIds: unreadIds }),
+    }).catch(() => {});
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({ type: "mark_read", inquiryId: activeConvo, messageIds: unreadIds })
+      );
+    }
+  }, [messages, activeConvo, user]);
 
   const sendMessage = async () => {
     const trimmed = messageText.trim();

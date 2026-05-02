@@ -245,24 +245,79 @@ export default function AccountPage() {
             </div>
           )}
 
-          <div className="border border-brand-border rounded-xl p-5 bg-white">
-            <h3 className="font-semibold mb-3">Notifications</h3>
-            <div className="space-y-3 text-sm">
-              {[
-                "New user registrations",
-                "Flagged accounts",
-                "Stale listing alerts",
-              ].map((notif) => (
-                <div key={notif} className="flex items-center justify-between">
-                  <span>{notif}</span>
-                  <div className="w-10 h-6 bg-brand-dark rounded-full relative cursor-pointer">
-                    <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <NotificationPrefsCard />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function NotificationPrefsCard() {
+  const { user } = useAuth();
+  const setUser = useAuthStore((s) => s.setUser);
+  const [prefs, setPrefs] = useState<Record<string, boolean>>({
+    savedSearches: true,
+    inquiryReplies: true,
+    propertyUpdates: true,
+    newsletter: false,
+    digestEnabled: true,
+    inactiveSummary: true,
+    ...((user?.notificationPrefs as Record<string, boolean>) ?? {}),
+  });
+
+  const togglePref = async (key: string, value: boolean) => {
+    const next = { ...prefs, [key]: value };
+    setPrefs(next);
+    try {
+      await apiRequest("/api/users/profile", {
+        method: "PUT",
+        body: JSON.stringify({ notificationPrefs: next }),
+      });
+      const fresh = await fetch("/api/auth/me", { credentials: "include" }).then((r) => (r.ok ? r.json() : null));
+      if (fresh) setUser(fresh);
+    } catch {
+      setPrefs(prefs);
+    }
+  };
+
+  const items = [
+    { key: "savedSearches", label: "Saved-search matches", desc: "Bell + push when a new property matches your criteria" },
+    { key: "inquiryReplies", label: "Inquiry replies", desc: "Bell + push when an agent or buyer responds" },
+    { key: "propertyUpdates", label: "Property updates", desc: "Price drops or status changes on saved listings" },
+    { key: "digestEnabled", label: "Daily email summary", desc: "One email at 09:00 with bell items you haven't read" },
+    { key: "inactiveSummary", label: "Weekly catch-up email", desc: "Sent only after 7 days of no activity" },
+    { key: "newsletter", label: "Newsletter", desc: "Curated property news (occasional)" },
+  ];
+
+  return (
+    <div className="border border-brand-border rounded-xl p-5 bg-white">
+      <h3 className="font-semibold mb-3">Notifications</h3>
+      <div className="space-y-4 text-sm">
+        {items.map((item) => (
+          <label key={item.key} className="flex items-start justify-between gap-3 cursor-pointer">
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-brand-dark">{item.label}</div>
+              <div className="text-xs text-brand-warm mt-0.5">{item.desc}</div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!!prefs[item.key]}
+              onClick={() => togglePref(item.key, !prefs[item.key])}
+              className={clsx(
+                "relative shrink-0 w-10 h-6 rounded-full transition-colors",
+                prefs[item.key] ? "bg-brand-dark" : "bg-brand-border"
+              )}
+            >
+              <span
+                className={clsx(
+                  "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+                  prefs[item.key] ? "right-1" : "left-1"
+                )}
+              />
+            </button>
+          </label>
+        ))}
       </div>
     </div>
   );

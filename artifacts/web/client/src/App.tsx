@@ -8,6 +8,7 @@ import ExplorePage from "./pages/ExplorePage";
 import PropertyDetailPage from "./pages/PropertyDetailPage";
 import ChatPage from "./pages/ChatPage";
 import AccountPage from "./pages/AccountPage";
+import InboxPage from "./pages/InboxPage";
 import ArticlesPage from "./pages/ArticlesPage";
 import ArticlePage from "./pages/ArticlePage";
 import ActivityPage from "./pages/ActivityPage";
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/chat/:inquiryId" element={<ChatPage />} />
           <Route path="/account" element={<AccountPage />} />
+          <Route path="/account/notifications" element={<InboxPage />} />
           <Route path="/news" element={<ArticlesPage />} />
           <Route path="/news/:slug" element={<ArticlePage />} />
 

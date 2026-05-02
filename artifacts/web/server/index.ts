@@ -21,7 +21,8 @@ import { notificationsRouter } from "./routes/notifications";
 import { setupWebSocket } from "./ws/chat";
 import { initRates } from "./services/exchangeRates";
 import cron from "node-cron";
-import { runSavedSearchDigest } from "./cron/savedSearchDigest";
+import { runDailyDigest } from "./cron/dailyDigest";
+import { runWeeklyInactiveSummary } from "./cron/weeklyInactiveSummary";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -164,16 +165,35 @@ if (process.env.NODE_ENV === "production") {
   app.use(vite.middlewares);
 }
 
-// Daily saved-search digest at 09:00 server time.
-cron.schedule("0 9 * * *", () => {
-  runSavedSearchDigest()
-    .then((r) =>
-      console.log(
-        `Saved-search digest: checked ${r.usersChecked} users, sent ${r.emailsSent} emails`
+// Daily missed-items digest at 09:00 UTC.
+cron.schedule(
+  "0 9 * * *",
+  () => {
+    runDailyDigest()
+      .then((r) =>
+        console.log(
+          `Daily digest: checked ${r.usersChecked} users, sent ${r.emailsSent} emails (${r.itemsEmailed} items)`
+        )
       )
-    )
-    .catch((err) => console.warn("Saved-search digest failed:", err));
-});
+      .catch((err) => console.warn("Daily digest failed:", err));
+  },
+  { timezone: "UTC" }
+);
+
+// Weekly re-engagement summary for users inactive > 7 days, Sundays 10:00 UTC.
+cron.schedule(
+  "0 10 * * 0",
+  () => {
+    runWeeklyInactiveSummary()
+      .then((r) =>
+        console.log(
+          `Weekly inactive summary: checked ${r.usersChecked} users, sent ${r.emailsSent} emails`
+        )
+      )
+      .catch((err) => console.warn("Weekly inactive summary failed:", err));
+  },
+  { timezone: "UTC" }
+);
 
 // Load exchange rates, then start server
 initRates().finally(() => {

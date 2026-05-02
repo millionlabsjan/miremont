@@ -37,6 +37,19 @@ notificationsRouter.get("/", requireAuth, async (req, res) => {
   res.json({ notifications: notifList, total, unread, page });
 });
 
+notificationsRouter.get("/unread-count", requireAuth, async (req, res) => {
+  const [{ unread }] = await db
+    .select({ unread: count() })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.userId, req.session.userId!),
+        eq(notifications.isRead, false)
+      )
+    );
+  res.json({ count: unread });
+});
+
 notificationsRouter.put("/:id/read", requireAuth, async (req, res) => {
   await db
     .update(notifications)

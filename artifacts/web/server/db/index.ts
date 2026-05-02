@@ -3,6 +3,7 @@ import postgres from "postgres";
 import { eq } from "drizzle-orm";
 import * as schema from "./schema";
 import { sendPush } from "../push";
+import { getTypeSpec } from "../notifications/types";
 
 const connectionString =
   process.env.DATABASE_URL || "postgresql://Jan@localhost:5432/miremont";
@@ -12,55 +13,58 @@ const client = postgres(connectionString);
 export const db = drizzle(client, { schema });
 export type Database = typeof db;
 
-// Map notification types to user preference keys
-const PREF_MAP: Record<string, string> = {
-  property_update: "propertyUpdates",
-  new_message: "inquiryReplies",
-  saved_search_match: "savedSearches",
-};
-
 interface NotifyOptions {
+  body?: string;
+  link?: string;
+  metadata?: Record<string, unknown>;
+  /**
+   * Email helper invoked only when the type is `transactionalImmediate`.
+   * digest-eligible types are emailed by the daily digest cron — do not pass this for them.
+   */
   sendEmail?: () => Promise<void>;
-  /** Set false to skip device push (e.g. background digest types that only email). */
-  push?: boolean;
 }
 
 export async function notify(
   userId: string,
   type: string,
   title: string,
-  body?: string,
-  link?: string,
-  options?: NotifyOptions
+  options: NotifyOptions = {}
 ) {
-  // Check user preferences if this type has a preference key
-  const prefKey = PREF_MAP[type];
-  if (prefKey) {
+  const spec = getTypeSpec(type);
+
+  // Pref-gate (skip if user opted out of this category)
+  if (spec.prefKey) {
     const [user] = await db
       .select({ notificationPrefs: schema.users.notificationPrefs })
       .from(schema.users)
       .where(eq(schema.users.id, userId))
       .limit(1);
-
     const prefs = user?.notificationPrefs as Record<string, boolean> | null;
-    // Default to true if preference not explicitly set
-    if (prefs && prefs[prefKey] === false) {
-      return; // User opted out — skip notification, email, and push
-    }
+    if (prefs && prefs[spec.prefKey] === false) return;
   }
 
-  await db.insert(schema.notifications).values({ userId, type, title, body, link });
+  await db.insert(schema.notifications).values({
+    userId,
+    type,
+    category: spec.category,
+    title,
+    body: options.body,
+    link: options.link,
+    metadata: options.metadata,
+  });
 
-  // Send email if provided (fire-and-forget, don't block)
-  if (options?.sendEmail) {
+  if (spec.category === "transactionalImmediate" && options.sendEmail) {
     options.sendEmail().catch((err) => {
-      console.warn(`Failed to send notification email for ${type}:`, err);
+      console.warn(`Failed to send transactional email for ${type}:`, err);
     });
   }
 
-  // Device push (fire-and-forget). Default on; opt out with push: false.
-  if (options?.push !== false) {
-    sendPush(userId, { title, body, data: { type, link } }).catch((err) => {
+  if (spec.defaultPush) {
+    sendPush(userId, {
+      title,
+      body: options.body,
+      data: { type, link: options.link },
+    }).catch((err) => {
       console.warn(`Failed to send push for ${type}:`, err);
     });
   }

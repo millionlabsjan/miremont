@@ -37,6 +37,9 @@ searchesRouter.post("/", requireAuth, async (req, res) => {
         userId: req.session.userId!,
         name: data.name,
         filters: data.filters,
+        minPriceUsd: typeof data.filters.minPrice === "number" ? String(data.filters.minPrice) : null,
+        maxPriceUsd: typeof data.filters.maxPrice === "number" ? String(data.filters.maxPrice) : null,
+        bedroomsMin: typeof data.filters.bedrooms === "number" ? data.filters.bedrooms : null,
       })
       .returning();
     res.status(201).json(search);
