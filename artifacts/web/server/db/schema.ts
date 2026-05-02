@@ -220,6 +220,7 @@ export const savedSearches = pgTable(
       categories?: string[];
       bedrooms?: number;
       bathrooms?: number;
+      features?: string[];
     }>(),
     minPriceUsd: decimal("min_price_usd", { precision: 15, scale: 2 }),
     maxPriceUsd: decimal("max_price_usd", { precision: 15, scale: 2 }),

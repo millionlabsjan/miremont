@@ -1,12 +1,17 @@
-import { useState, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, Heart, ChevronRight, Bed, Bath, Maximize, SlidersHorizontal } from "lucide-react";
 import { Link } from "react-router-dom";
 import { apiRequest } from "../lib/queryClient";
-import { APIProvider, Map, AdvancedMarker, Pin, InfoWindow } from "@vis.gl/react-google-maps";
+import { APIProvider, Map, AdvancedMarker, InfoWindow } from "@vis.gl/react-google-maps";
 import { useAuth } from "../hooks/useAuth";
 import { useRates } from "../hooks/useRates";
+import { useFilters } from "../hooks/useFilters";
 import { formatPrice, formatPriceCompact } from "../lib/formatPrice";
+import { filtersToParams, hasActiveFilters, type FilterState } from "@workspace/filters";
+import StandardFilters from "../components/filters/StandardFilters";
+import AdvancedFiltersDialog from "../components/filters/AdvancedFiltersDialog";
+import SavedSearchesMenu from "../components/filters/SavedSearchesMenu";
 
 const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || "";
 
@@ -145,18 +150,23 @@ export default function ExplorePage() {
   const { user } = useAuth();
   const rates = useRates();
   const userCurrency = user?.preferredCurrency;
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const { filters, setFilters, replaceFilters, resetFilters } = useFilters();
   const [selectedPin, setSelectedPin] = useState<Property | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  const queryString = useMemo(() => {
+    const params = filtersToParams(filters);
+    const sp = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined) sp.set(k, v);
+    }
+    return sp.toString();
+  }, [filters]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["properties", search, page],
+    queryKey: ["properties", queryString],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (search) params.set("q", search);
-      params.set("page", String(page));
-      params.set("limit", "20");
-      const res = await fetch(`/api/properties?${params}`, {
+      const res = await fetch(`/api/properties?${queryString}`, {
         credentials: "include",
       });
       return res.json();
@@ -167,6 +177,12 @@ export default function ExplorePage() {
     await apiRequest(`/api/properties/${id}/favorite`, { method: "POST" });
   };
 
+  const handleLoadSavedSearch = (next: FilterState) => {
+    replaceFilters(next);
+  };
+
+  const advancedCount = filters.features.length;
+
   return (
     <div className="flex h-screen">
       {/* Left: Property List */}
@@ -175,29 +191,50 @@ export default function ExplorePage() {
           <h1 className="font-serif text-3xl font-bold text-brand-dark mb-4">
             Explore
           </h1>
-          <div className="relative mb-4">
+          <div className="relative mb-3">
             <Search
               size={18}
               className="absolute left-4 top-1/2 -translate-y-1/2 text-brand-warm"
             />
             <input
               type="text"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
+              value={filters.q}
+              onChange={(e) => setFilters({ q: e.target.value, page: 1 })}
               placeholder="Search by location, type..."
               className="w-full h-11 pl-11 pr-4 bg-white border border-brand-border rounded-lg text-sm placeholder:text-brand-warm focus:outline-none focus:ring-2 focus:ring-brand-dark/20"
             />
           </div>
+          <div className="mb-3">
+            <StandardFilters filters={filters} setFilters={setFilters} />
+          </div>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-brand-warm">
-              {data?.total || 0} properties found
-            </p>
-            <button className="text-brand-warm hover:text-brand-dark">
-              <SlidersHorizontal size={18} />
-            </button>
+            <div className="flex items-center gap-2">
+              <p className="text-sm text-brand-warm">
+                {data?.total || 0} properties found
+              </p>
+              {hasActiveFilters(filters) && (
+                <button
+                  onClick={resetFilters}
+                  className="text-xs text-brand-dark underline hover:no-underline"
+                >
+                  Reset all
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <SavedSearchesMenu filters={filters} onLoad={handleLoadSavedSearch} />
+              <button
+                onClick={() => setAdvancedOpen(true)}
+                className="flex items-center gap-1 text-brand-warm hover:text-brand-dark text-xs"
+              >
+                <SlidersHorizontal size={18} />
+                {advancedCount > 0 && (
+                  <span className="bg-brand-dark text-brand-offwhite text-[10px] font-bold px-1.5 h-4 min-w-[16px] rounded-full inline-flex items-center justify-center">
+                    {advancedCount}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -288,6 +325,13 @@ export default function ExplorePage() {
           </Map>
         </APIProvider>
       </div>
+
+      <AdvancedFiltersDialog
+        open={advancedOpen}
+        onClose={() => setAdvancedOpen(false)}
+        filters={filters}
+        setFilters={setFilters}
+      />
     </div>
   );
 }

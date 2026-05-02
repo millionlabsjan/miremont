@@ -21,11 +21,15 @@ searchesRouter.post("/", requireAuth, async (req, res) => {
     name: z.string().optional(),
     filters: z.object({
       location: z.string().optional(),
+      lat: z.number().optional(),
+      lng: z.number().optional(),
+      radius: z.number().optional(),
       minPrice: z.number().optional(),
       maxPrice: z.number().optional(),
       categories: z.array(z.string()).optional(),
       bedrooms: z.number().optional(),
       bathrooms: z.number().optional(),
+      features: z.array(z.string()).optional(),
     }),
   });
 

@@ -3,12 +3,18 @@ const http = require("http");
 const { getDefaultConfig } = require("expo/metro-config");
 
 const config = getDefaultConfig(__dirname);
+const workspaceRoot = path.resolve(__dirname, "../..");
 
 // Ensure Metro resolves packages installed in this workspace package
 config.resolver.nodeModulesPaths = [
   path.resolve(__dirname, "node_modules"),
-  path.resolve(__dirname, "../../node_modules"),
+  path.resolve(workspaceRoot, "node_modules"),
 ];
+
+// Watch the workspace root so symlinked workspace packages (e.g. @workspace/filters
+// → lib/filters) are picked up by Metro and rebundled on edit.
+config.watchFolders = [workspaceRoot];
+config.resolver.unstable_enableSymlinks = true;
 
 const API_TARGET_HOST = process.env.WEB_API_HOST || "localhost";
 const API_TARGET_PORT = parseInt(process.env.WEB_API_PORT || "5000", 10);
