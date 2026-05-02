@@ -6,6 +6,8 @@ import { useAuthStore } from "../../lib/auth";
 import { colors } from "../../constants/theme";
 import { formatPrice } from "../../lib/formatPrice";
 import { useRates } from "../../lib/useRates";
+import { FilterStateSchema, summarizeFilters } from "@workspace/filters";
+import { useFilterStore } from "../../lib/filterStore";
 
 function timeAgo(date: string) {
   const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
@@ -48,6 +50,14 @@ export default function ActivityScreen() {
   const markAsRead = async (id: string) => {
     await apiRequest(`/api/notifications/${id}/read`, { method: "PUT" });
     queryClient.invalidateQueries({ queryKey: ["notifications"] });
+  };
+
+  const replaceFilters = useFilterStore((s) => s.replaceFilters);
+  const handleViewSearch = (rawFilters: any) => {
+    const parsed = FilterStateSchema.safeParse(rawFilters || {});
+    if (!parsed.success) return;
+    replaceFilters(parsed.data);
+    router.push("/(tabs)/explore");
   };
 
   return (
@@ -120,25 +130,37 @@ export default function ActivityScreen() {
         {searches.length === 0 ? (
           <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: colors.warm }}>No saved searches yet</Text>
         ) : (
-          searches.map((s: any) => (
-            <View key={s.id} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 14, backgroundColor: colors.white, marginBottom: 8 }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: colors.dark }}>{s.name || "Untitled search"}</Text>
-                <TouchableOpacity onPress={() => router.push("/(tabs)/explore")}>
+          searches.map((s: any) => {
+            const parsed = FilterStateSchema.safeParse(s.filters || {});
+            const tags = parsed.success ? summarizeFilters(parsed.data) : [];
+            return (
+              <TouchableOpacity
+                key={s.id}
+                onPress={() => handleViewSearch(s.filters)}
+                activeOpacity={0.7}
+                style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 14, backgroundColor: colors.white, marginBottom: 8 }}
+              >
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 15, color: colors.dark, flex: 1 }} numberOfLines={1}>{s.name || "Untitled search"}</Text>
                   <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: colors.accent }}>View →</Text>
-                </TouchableOpacity>
-              </View>
-              {s.filters && (
-                <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-                  {Object.entries(s.filters).filter(([_, v]) => v).map(([key, val]) => (
-                    <View key={key} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 }}>
-                      <Text style={{ fontFamily: "Inter_400Regular", fontSize: 11, color: colors.warm }}>{String(val)}</Text>
-                    </View>
-                  ))}
                 </View>
-              )}
-            </View>
-          ))
+                {tags.length > 0 ? (
+                  <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                    {tags.slice(0, 5).map((tag, i) => (
+                      <View key={`${s.id}-tag-${i}`} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: colors.input }}>
+                        <Text style={{ fontFamily: "Inter_500Medium", fontSize: 11, color: colors.dark }}>{tag}</Text>
+                      </View>
+                    ))}
+                    {tags.length > 5 && (
+                      <Text style={{ fontFamily: "Inter_500Medium", fontSize: 11, color: colors.warm, paddingVertical: 4 }}>+{tags.length - 5} more</Text>
+                    )}
+                  </View>
+                ) : (
+                  <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm, marginTop: 6 }}>No filters set</Text>
+                )}
+              </TouchableOpacity>
+            );
+          })
         )}
       </View>
     </ScrollView>

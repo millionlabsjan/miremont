@@ -10,19 +10,24 @@ import { colors } from "../../constants/theme";
 import { useAuthStore } from "../../lib/auth";
 import { formatPrice, formatPriceCompact } from "../../lib/formatPrice";
 import { useRates } from "../../lib/useRates";
+import { useFilters } from "../../hooks/useFilters";
+import { filtersToParams, hasActiveFilters, type FilterState } from "@workspace/filters";
+import StandardFilters from "../../components/filters/StandardFilters";
+import AdvancedFiltersModal from "../../components/filters/AdvancedFiltersModal";
+import SavedSearchesSheet from "../../components/filters/SavedSearchesSheet";
 
 const { width } = Dimensions.get("window");
 const ARROW_WIDTH = 28;
 const SHEET_PADDING = 8;
 const CARD_LIST_WIDTH = width - (ARROW_WIDTH + SHEET_PADDING) * 2;
-const CATEGORIES = ["All", "Villa", "Penthouse", "Estate", "Apartment", "Beachfront"];
 
 export default function ExploreScreen() {
   const userCurrency = useAuthStore((s) => s.user?.preferredCurrency);
   const rates = useRates();
-  const [search, setSearch] = useState("");
+  const { filters, setFilters, replaceFilters, resetFilters } = useFilters();
   const [showMap, setShowMap] = useState(false);
-  const [activeCategory, setActiveCategory] = useState("All");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [savedOpen, setSavedOpen] = useState(false);
   const [mapRegion, setMapRegion] = useState<Region | null>(null);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
 
@@ -39,15 +44,27 @@ export default function ExploreScreen() {
     } catch {}
   };
 
+  const queryString = useMemo(() => {
+    const params = filtersToParams(filters);
+    const sp = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined) sp.set(k, v);
+    }
+    return sp.toString();
+  }, [filters]);
+
   const { data } = useQuery({
-    queryKey: ["properties-explore", search],
-    queryFn: () => apiRequest(`/api/properties?q=${search}&limit=20`),
+    queryKey: ["properties-explore", queryString],
+    queryFn: () => apiRequest(`/api/properties?${queryString}`),
   });
 
-  const allProperties = data?.properties || [];
-  const properties = activeCategory === "All"
-    ? allProperties
-    : allProperties.filter((p: any) => p.categories?.some((c: string) => c.toLowerCase() === activeCategory.toLowerCase()));
+  const properties = data?.properties || [];
+
+  const handleLoadSavedSearch = (next: FilterState) => {
+    replaceFilters(next);
+  };
+
+  const advancedCount = filters.features.length;
 
   const visibleProperties = useMemo(() => {
     if (!mapRegion) return properties.filter((p: any) => p.latitude && p.longitude);
@@ -264,12 +281,27 @@ export default function ExploreScreen() {
       <View style={{ paddingTop: 56, paddingHorizontal: 20, paddingBottom: 8 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <Text style={{ fontFamily: "PlayfairDisplay_700Bold", fontSize: 24, color: colors.dark }}>Explore</Text>
-          <TouchableOpacity onPress={() => setShowMap(true)}><Feather name="map-pin" size={20} color={colors.dark} /></TouchableOpacity>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+            <TouchableOpacity onPress={() => setSavedOpen(true)}>
+              <Feather name="bookmark" size={20} color={colors.dark} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setAdvancedOpen(true)} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              <Feather name="sliders" size={20} color={colors.dark} />
+              {advancedCount > 0 && (
+                <View style={{ backgroundColor: colors.dark, borderRadius: 9, minWidth: 18, height: 18, paddingHorizontal: 5, justifyContent: "center", alignItems: "center" }}>
+                  <Text style={{ fontFamily: "Inter_700Bold", fontSize: 10, color: colors.offwhite }}>{advancedCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowMap(true)}>
+              <Feather name="map-pin" size={20} color={colors.dark} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <TextInput
-          value={search}
-          onChangeText={setSearch}
+          value={filters.q}
+          onChangeText={(v) => setFilters({ q: v, page: 1 })}
           placeholder="Search location, property type..."
           placeholderTextColor={colors.warm}
           style={{ height: 44, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 40, fontFamily: "Inter_400Regular", fontSize: 14, color: colors.dark }}
@@ -277,27 +309,37 @@ export default function ExploreScreen() {
         <View style={{ position: "absolute", left: 32, bottom: 20 }}><Feather name="search" size={16} color={colors.warm} /></View>
       </View>
 
-      {/* Category filter chips */}
-      <View style={{ height: 44, marginBottom: 12 }}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 8, alignItems: "center", height: 44 }}>
-          {CATEGORIES.map((cat) => {
-            const isActive = activeCategory === cat;
-            return (
-              <TouchableOpacity
-                key={cat}
-                onPress={() => setActiveCategory(cat)}
-                style={{
-                  height: 36, paddingHorizontal: 16, borderRadius: 20, justifyContent: "center",
-                  backgroundColor: isActive ? colors.dark : colors.offwhite,
-                  borderWidth: 1, borderColor: isActive ? colors.dark : colors.border,
-                }}
-              >
-                <Text style={{ fontFamily: "Inter_500Medium", fontSize: 13, color: isActive ? colors.offwhite : colors.dark }}>{cat}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+      <View style={{ marginBottom: 8 }}>
+        <StandardFilters filters={filters} setFilters={setFilters} />
       </View>
+
+      {hasActiveFilters(filters) && (
+        <View
+          style={{
+            paddingHorizontal: 20,
+            paddingVertical: 6,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <Text style={{ fontFamily: "Inter_400Regular", fontSize: 12, color: colors.warm }}>
+            {data?.total ?? 0} properties match
+          </Text>
+          <TouchableOpacity onPress={resetFilters} hitSlop={8}>
+            <Text
+              style={{
+                fontFamily: "Inter_500Medium",
+                fontSize: 12,
+                color: colors.dark,
+                textDecorationLine: "underline",
+              }}
+            >
+              Reset all
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Property list */}
       <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 32 }}>
@@ -354,6 +396,23 @@ export default function ExploreScreen() {
           </TouchableOpacity>
         ))}
       </ScrollView>
+
+      <AdvancedFiltersModal
+        visible={advancedOpen}
+        onClose={() => setAdvancedOpen(false)}
+        filters={filters}
+        setFilters={setFilters}
+        onSaveSearch={() => {
+          setAdvancedOpen(false);
+          setSavedOpen(true);
+        }}
+      />
+      <SavedSearchesSheet
+        visible={savedOpen}
+        onClose={() => setSavedOpen(false)}
+        filters={filters}
+        onLoad={handleLoadSavedSearch}
+      />
     </View>
   );
 }

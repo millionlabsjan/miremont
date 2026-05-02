@@ -206,17 +206,7 @@ export const savedSearches = pgTable("saved_searches", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 255 }),
-  filters: jsonb("filters").$type<{
-    location?: string;
-    lat?: number;
-    lng?: number;
-    radius?: number;
-    minPrice?: number;
-    maxPrice?: number;
-    categories?: string[];
-    bedrooms?: number;
-    bathrooms?: number;
-  }>(),
+  filters: jsonb("filters").$type<Record<string, string | number>>(),
   lastNotifiedAt: timestamp("last_notified_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

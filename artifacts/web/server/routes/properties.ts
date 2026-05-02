@@ -25,6 +25,7 @@ import { z } from "zod";
 import { MIN_PROPERTY_PRICE_USD } from "../../shared/constants";
 import { getRates, convert } from "../services/exchangeRates";
 import { sendPropertyUpdateEmail } from "../email";
+import { FilterStateSchema, groupFeaturesByCategory } from "@workspace/filters";
 
 export const propertiesRouter = Router();
 
@@ -34,27 +35,43 @@ propertiesRouter.get("/rates", async (_req, res) => {
   res.json({ rates });
 });
 
+// Price bounds (p10/p90) for slider smart defaults — cached 60s in-process
+let priceBoundsCache: { at: number; data: { p10: number; p90: number; min: number; max: number } } | null = null;
+const PRICE_BOUNDS_TTL_MS = 60_000;
+propertiesRouter.get("/price-bounds", async (_req, res) => {
+  const now = Date.now();
+  if (priceBoundsCache && now - priceBoundsCache.at < PRICE_BOUNDS_TTL_MS) {
+    return res.json(priceBoundsCache.data);
+  }
+  const [row] = await db.execute<{ p10: string | null; p90: string | null; min: string | null; max: string | null }>(
+    sql`SELECT
+      percentile_cont(0.1) WITHIN GROUP (ORDER BY price_usd) AS p10,
+      percentile_cont(0.9) WITHIN GROUP (ORDER BY price_usd) AS p90,
+      MIN(price_usd) AS min,
+      MAX(price_usd) AS max
+    FROM properties WHERE status = 'active' AND price_usd IS NOT NULL`
+  );
+  const data = {
+    p10: Number(row?.p10) || 0,
+    p90: Number(row?.p90) || 0,
+    min: Number(row?.min) || 0,
+    max: Number(row?.max) || 0,
+  };
+  priceBoundsCache = { at: now, data };
+  res.json(data);
+});
+
 // Search/browse properties
 propertiesRouter.get("/", async (req, res) => {
-  const page = parseInt(req.query.page as string) || 1;
-  const limit = parseInt(req.query.limit as string) || 20;
+  const parsed = FilterStateSchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ message: parsed.error.errors[0].message });
+  }
+  const f = parsed.data;
+  const page = f.page;
+  const limit = f.limit;
   const offset = (page - 1) * limit;
-  const q = (req.query.q as string) || "";
-  const minPrice = req.query.minPrice
-    ? parseFloat(req.query.minPrice as string)
-    : undefined;
-  const maxPrice = req.query.maxPrice
-    ? parseFloat(req.query.maxPrice as string)
-    : undefined;
-  const categoryIds = req.query.categories
-    ? (req.query.categories as string).split(",")
-    : undefined;
-  const sort = (req.query.sort as string) || "newest";
-  const country = req.query.country as string;
-  const city = req.query.city as string;
-  const minBedrooms = req.query.minBedrooms
-    ? parseInt(req.query.minBedrooms as string)
-    : undefined;
+  const q = f.q || "";
 
   const conditions = [eq(properties.status, "active")];
 
@@ -68,13 +85,56 @@ propertiesRouter.get("/", async (req, res) => {
       )!
     );
   }
-  if (minPrice) conditions.push(gte(properties.priceUsd, String(minPrice)));
-  if (maxPrice) conditions.push(lte(properties.priceUsd, String(maxPrice)));
-  if (country) conditions.push(eq(properties.country, country));
-  if (city) conditions.push(ilike(properties.city, `%${city}%`));
-  if (minBedrooms) conditions.push(gte(properties.bedrooms, minBedrooms));
+  if (f.min !== undefined) conditions.push(gte(properties.priceUsd, String(f.min)));
+  if (f.max !== undefined) conditions.push(lte(properties.priceUsd, String(f.max)));
+  if (f.beds !== undefined) conditions.push(gte(properties.bedrooms, f.beds));
+  if (f.baths !== undefined) conditions.push(gte(properties.bathrooms, String(f.baths)));
+
+  // Property types: match category names (case-insensitive), or accept UUIDs
+  if (f.types.length > 0) {
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const ids = f.types.filter((t) => uuidRe.test(t));
+    const names = f.types.filter((t) => !uuidRe.test(t)).map((n) => n.toLowerCase());
+    const orParts = [] as ReturnType<typeof sql>[];
+    if (ids.length) orParts.push(sql`${categories.id} IN (${sql.join(ids.map((i) => sql`${i}::uuid`), sql`, `)})`);
+    if (names.length) orParts.push(sql`LOWER(${categories.name}) IN (${sql.join(names.map((n) => sql`${n}`), sql`, `)})`);
+    const matchSql = orParts.length === 1 ? orParts[0] : sql`(${sql.join(orParts, sql` OR `)})`;
+    conditions.push(
+      sql`EXISTS (
+        SELECT 1 FROM ${propertyCategories}
+        INNER JOIN ${categories} ON ${categories.id} = ${propertyCategories.categoryId}
+        WHERE ${propertyCategories.propertyId} = ${properties.id}
+        AND ${matchSql}
+      )`
+    );
+  }
+
+  // Geo radius (Haversine, km)
+  if (f.lat !== undefined && f.lng !== undefined && f.radius !== undefined) {
+    conditions.push(
+      sql`(6371 * acos(
+        cos(radians(${f.lat})) * cos(radians(CAST(${properties.latitude} AS DOUBLE PRECISION))) *
+        cos(radians(CAST(${properties.longitude} AS DOUBLE PRECISION)) - radians(${f.lng})) +
+        sin(radians(${f.lat})) * sin(radians(CAST(${properties.latitude} AS DOUBLE PRECISION)))
+      )) <= ${f.radius}`
+    );
+  }
+
+  // Features: OR-within group, AND-across groups via jsonb ?| per group
+  if (f.features.length > 0) {
+    const grouped = groupFeaturesByCategory(f.features);
+    for (const opts of grouped.values()) {
+      conditions.push(
+        sql`${properties.features} ?| ARRAY[${sql.join(
+          opts.map((o) => sql`${o}`),
+          sql`, `
+        )}]::text[]`
+      );
+    }
+  }
 
   const where = and(...conditions);
+  const sort = f.sort;
 
   const orderBy =
     sort === "price_asc"

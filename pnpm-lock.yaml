@@ -139,6 +139,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.99.2
         version: 5.100.5(react@19.1.0)
+      '@workspace/filters':
+        specifier: workspace:*
+        version: link:../../lib/filters
       expo:
         specifier: ~54.0.33
         version: 54.0.33(@babel/core@7.29.0)(@expo/metro-runtime@6.1.2)(expo-router@6.0.23)(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3)
@@ -230,6 +233,9 @@ importers:
       '@vis.gl/react-google-maps':
         specifier: ^1.8.3
         version: 1.8.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@workspace/filters':
+        specifier: workspace:*
+        version: link:../../lib/filters
       argon2:
         specifier: ^0.41.1
         version: 0.41.1
@@ -421,6 +427,12 @@ importers:
       drizzle-kit:
         specifier: ^0.31.9
         version: 0.31.9
+
+  lib/filters:
+    dependencies:
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
 
   scripts:
     devDependencies:

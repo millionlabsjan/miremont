@@ -19,14 +19,7 @@ searchesRouter.get("/", requireAuth, async (req, res) => {
 searchesRouter.post("/", requireAuth, async (req, res) => {
   const schema = z.object({
     name: z.string().optional(),
-    filters: z.object({
-      location: z.string().optional(),
-      minPrice: z.number().optional(),
-      maxPrice: z.number().optional(),
-      categories: z.array(z.string()).optional(),
-      bedrooms: z.number().optional(),
-      bathrooms: z.number().optional(),
-    }),
+    filters: z.record(z.string(), z.union([z.string(), z.number()])),
   });
 
   try {

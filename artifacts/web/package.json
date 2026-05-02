@@ -16,6 +16,7 @@
   "dependencies": {
     "@hono/node-server": "^1.13.7",
     "@neondatabase/serverless": "^0.10.4",
+    "@workspace/filters": "workspace:*",
     "@replit/object-storage": "^1.0.0",
     "@vis.gl/react-google-maps": "^1.8.3",
     "argon2": "^0.41.1",
